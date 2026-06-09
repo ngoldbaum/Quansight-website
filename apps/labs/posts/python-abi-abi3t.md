@@ -20,7 +20,7 @@ Why did I begin this post's the title with "What _Every_ Python Developer Should
 Aren't these low-level details the kind of thing we can ignore most of the time in a high-level language like Python?
 
 In this post I hope to answer all these questions and build up your intuition about these topics.
-I also hope you'll learn some useful information about how Python projects that include native extensions are distributed, what the abi tags that show up in wheel filenames mean, and how different distributors might make different trade-offs that the different ABIs supported by CPython allow projects to make.
+I also hope you'll learn some useful information about how Python projects that include native extensions are distributed, what the ABI compatibility tags that show up in wheel filenames mean, and how projects can choose to target different python ABIs depending on the tradeoffs they want to make.
 
 ## The CPython interpreter runtime and C API
 
