@@ -6,10 +6,10 @@ description: 'An introduction to the concept of the Application Binary Interface
 category: [PyData ecosystem]
 featuredImage:
   src: /posts/python-abi-abi3t/cpython_api_layers_listing.png
-  alt: 'Five nested ellispes illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API, exposed only if `Py_BUILD_CORE` is defined. The next enclosed ellipse is red and outlined with a dash line defined in the legend to mean "Usable with `#include "Python.h"`". The red ellipse is labeled "Private API `_Py*` prefix`. The next enclosed ellipse is yellow and is labeld "Unstable API `PyUnstable_*` prefix". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green with a dark shaded outline the legend defines to mean "Usable if `Py_LIMITED_API` is defined and is labeled "Limited API".'
+  alt: 'Five nested ellispes illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API". The next enclosed ellipse is red and is labeled "Private API`. The next enclosed ellipse is yellow and is labeled "Unstable API". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green and is labeled "Limited API".'
 hero:
   imageSrc: /posts/python-abi-abi3t/cpython_api_layers_hero.png
-  imageAlt: 'Five nested ellispes illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API, exposed only if `Py_BUILD_CORE` is defined. The next enclosed ellipse is red and outlined with a dash line defined in the legend to mean "Usable with `#include "Python.h"`". The red ellipse is labeled "Private API `_Py*` prefix`. The next enclosed ellipse is yellow and is labeld "Unstable API `PyUnstable_*` prefix". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green with a dark shaded outline the legend defines to mean "Usable if `Py_LIMITED_API` is defined and is labeled "Limited API".'
+  imageAlt: 'Five nested ellispes illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API". The next enclosed ellipse is red and is labeled "Private API`. The next enclosed ellipse is yellow and is labeled "Unstable API". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green and is labeled "Limited API".'
 ---
 
 # What Every Python Developer Should Know About the CPython ABI
@@ -161,7 +161,7 @@ Taken together, these two pieces of information, the reference count and the typ
 To make that all a little more concrete, `object()` in Python instantiates a `PyObject` instance in the interpreter runtime, while `dict()` instantiates a `PyDictObject` struct - a different struct that extends `PyObject`.
 That is, the first two fields of `PyDictObject` are exactly the same as `PyObject`: all Python objects correspond either to an instance of `PyObject` or a struct that extends `PyObject.
 
-## The Layers of Python ABI
+## The Layers of the CPython C API
 
 In the early days, there wasn't much distinction between "the interpreter" and "what's exposed by the C API": one simply was able to monkey around at will with internal state in the interpreter.
 While this enabled lots of cool stuff, it also had a cost: extensions regularly broke with different Python releases, requiring careful fixes to adapt to changes in interpreter internals.
@@ -173,12 +173,45 @@ This is managed by breaking up the "full" C API surface used by the interpreter 
  <figure style={{ textAlign: 'center' }}>
    <img
      src="/posts/python-abi-abi3t/cpython_api_layers.png"
-     alt='Five nested ellispes illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API, exposed only if `Py_BUILD_CORE` is defined. The next enclosed ellipse is red and outlined with a dash line defined in the legend to mean "Usable with `#include "Python.h"`". The red ellipse is labeled "Private API `_Py*` prefix`. The next enclosed ellipse is yellow and is labeld "Unstable API `PyUnstable_*` prefix". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green with a dark shaded outline the legend defines to mean "Usable if `Py_LIMITED_API` is defined and is labeled "Limited API".'
+     alt='Five nested ellispes illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API, exposed only if `Py_BUILD_CORE` is defined. The next enclosed ellipse is red and outlined with a dash line defined in the legend to mean "Usable with `#include "Python.h"`". The red ellipse is labeled "Private API `_Py*` prefix`. The next enclosed ellipse is yellow and is labeled "Unstable API `PyUnstable_*` prefix". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green with a dark shaded outline the legend defines to mean "Usable if `Py_LIMITED_API` is defined and is labeled "Limited API".'
      style={{position:'relative',left:'12%',width:'70%'}}
    />
  </figure>
+ 
+### Internal C API
 
-### The Version-Specific ABI
+The outermost layer is for people who work on the CPython implementation.
+In order to use it, a C or C++ program must define the `Py_BUILD_CORE` compiler macro, which is equivalent to declaring that your program is a part of the CPython interpreter itself.
+As [the CPython developer guide](https://devguide.python.org/developer-workflow/c-api/#the-internal-api) indicates, the internal API is subject to change at any moment and should not be relied on.
+Defining `Py_BUILD_CORE` and opting into using the internal C API is equivalent to saying you're willing to take on maintenance for code that can and will break at any time.
+For 99.9% of people who are not CPython contributors, the internal API should not be used.
+
+### Private C API
+
+The public API is the innermost four layers in the diagram above. It includes everything available to a C program that has `#include "Python.h"` at the top and no other special preprocessor macros defined at build time.
+For historical reasons, this includes quite a few symbols, including many private implementation details whose names are prefixed by a leading underscore.
+To pick a random example: [`_PyDict_GetItem_KnownHash`](https://github.com/python/cpython/blob/2e5843e13fcfd768a435d82e6182af403844432c/Include/cpython/dictobject.h#L45-L46) allows users to bypass the normal Python `dict` interface to directly access a dict entry with an already-computed hash.
+This optimization is useful sometimes in the interpreter, so it's still defined, but it's not a publicly available and documented primitive, so it may be deprecated and eventually removed or possibly get promoted to an official API function.
+Sometimes symbols are exposed like this for technical reasons, sometimes for historical reasons, and sometimes because a CPython user requested the ability to do so with the knowledge that there is no API stability guarantee for these functions.
+
+### Unstable C API
+
+The next innermost layer subsumes all of the documented functionality in the CPython C API. Not everything that's documented is stable - the outermost layer is [the `PyUnstable` C API](https://docs.python.org/3/c-api/stable.html#unstable-c-api). These are documented symbols that serve a real purpose, but that the CPython developers are not ready to commit to supporting long-term because they rely on interpreter implementation details.
+The unstable API is most useful for project or organizations who can regularly follow and contribute to CPython C API development and can make appropriate judgement calls about the suitability of using these API functions. If a serious defect is discovered in a `PyUnstable` API symbol, it may even be removed entirely in a CPython minor release.
+
+### The Version-Specific API
+
+The next innermost layer in the Python version-specific C API and includes all symbols that follow the CPython C API [stability policy](https://docs.python.org/3/c-api/stable.html#c-api-stability), as originally adopted back in 2009 for [PEP 387](https://peps.python.org/pep-0387/).
+While public symbols in the CPython C API can be removed following a deprecation period or to fix a serious defect, this only happens after a period of public discussion and consideration of the community impact. Critically, CPython has a policy not to add or remove items in the version-specific API from the first beta release of a Python minor version onward.
+For example, this year Python 3.15.0b1 came out in May and that release froze the Python 3.15 version-specific C API.
+
+## CPython C ABI stability
+
+### The version-specific ABI
+
+The guarantee that the Python version-specific C API does not change within a Python minor release series corresponds to a stability policty for the CPython version-specific ABI.
+In practice, itmeans that extension modules and binary wheels built using Python 3.15.0b1 can be imported using any subsequent version of Python 3.15, even years into the future.
+The NumPy project and many other projects across the ecosystem use builds targeting this C API layer to ship distinct binaries to users that target several different Python releases for every NumPy release.
 
 ### The Stable ABI: `abi3`
 
