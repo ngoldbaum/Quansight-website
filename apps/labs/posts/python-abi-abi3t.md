@@ -167,8 +167,16 @@ In the early days, there wasn't much distinction between "the interpreter" and "
 While this enabled lots of cool stuff, it also had a cost: extensions regularly broke with different Python releases, requiring careful fixes to adapt to changes in interpreter internals.
 This also introduced a design pressure to freeze internals, lest people building on Python complain about changes breaking their code.
 
-These days there is a much better distinction between CPython internals and publicly exposed API, with all signs pointing towards the trend of isolating interpreter internals to continue in the future.
+These days there is a much better distinction between CPython internals and publicly exposed API, with all signs pointing towards the trend of isolating interpreter internals to continue into the future.
 This is managed by breaking up the "full" C API surface used by the interpreter into five different layers, illustrated in the diagram below.
+
+ <figure style={{ textAlign: 'center' }}>
+   <img
+     src="/posts/python-abi-abi3t/cpython_api_layers.png"
+     alt='Five nested ellispes illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API, exposed only if `Py_BUILD_CORE` is defined. The next enclosed ellipse is red and outlined with a dash line defined in the legend to mean "Usable with `#include "Python.h"`". The red ellipse is labeled "Private API `_Py*` prefix`. The next enclosed ellipse is yellow and is labeld "Unstable API `PyUnstable_*` prefix". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green with a dark shaded outline the legend defines to mean "Usable if `Py_LIMITED_API` is defined and is labeled "Limited API".'
+     style={{position:'relative',left:'12%',width:'70%'}}
+   />
+ </figure>
 
 ### The Version-Specific ABI
 
