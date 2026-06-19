@@ -5,11 +5,11 @@ published: June 4, 2026
 description: 'An introduction to the concept of the Application Binary Interface (ABI), the various CPython ABIs, and the new abi3t stable ABI in Python 3.15.'
 category: [PyData ecosystem]
 featuredImage:
-  src: /posts/python-abi-abi3t/puzzle.png
-  alt: 'A diagram showing three horizontally interlocking puzzle pieces illustrating how Python can call into a compiled extension. The puzzle piece on the left is purple and is labeled in a monospace font with `$ python run.py`. The middle piece is blue and labeled "CPython ABI" in a handwritten font. The right piece is green and labeled "Compiled Extension Module".'
+  src: /posts/python-abi-abi3t/cpython_api_layers_listing.png
+  alt: 'Five nested ellispes illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API, exposed only if `Py_BUILD_CORE` is defined. The next enclosed ellipse is red and outlined with a dash line defined in the legend to mean "Usable with `#include "Python.h"`". The red ellipse is labeled "Private API `_Py*` prefix`. The next enclosed ellipse is yellow and is labeld "Unstable API `PyUnstable_*` prefix". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green with a dark shaded outline the legend defines to mean "Usable if `Py_LIMITED_API` is defined and is labeled "Limited API".'
 hero:
-  imageSrc: /posts/python-abi-abi3t/hero.png
-  imageAlt: 'A diagram showing three horizontally interlocking puzzle pieces illustrating how Python can call into a compiled extension. The puzzle piece on the left is purple and is labeled in a monospace font with `$ python run.py`. The middle piece is blue and labeled "CPython ABI" in a handwritten font. The right piece is green and labeled "Compiled Extension Module".'
+  imageSrc: /posts/python-abi-abi3t/cpython_api_layers_hero.png
+  imageAlt: 'Five nested ellispes illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API, exposed only if `Py_BUILD_CORE` is defined. The next enclosed ellipse is red and outlined with a dash line defined in the legend to mean "Usable with `#include "Python.h"`". The red ellipse is labeled "Private API `_Py*` prefix`. The next enclosed ellipse is yellow and is labeld "Unstable API `PyUnstable_*` prefix". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green with a dark shaded outline the legend defines to mean "Usable if `Py_LIMITED_API` is defined and is labeled "Limited API".'
 ---
 
 # What Every Python Developer Should Know About the CPython ABI
@@ -129,9 +129,13 @@ The layout of the struct is the order and types of all of the members of the str
 Notably, the Python ABI does _not_ include things that _are_ in the C API like macros and typedefs. Since C macros are a feature of the C preprocessor, by the time a set of machine code is generated, the macro has long since been expanded into C code.
 This can be a little confusing when working with the C API and thinking about the difference between the ABI and API because many symbols in the C API are implemented as macros but logically behave as functions.
 
-### How the Python ABI exposes structs
+### The PyObject struct
 
-By far the most important struct in the CPython C API is the `PyObject` struct.
+Why go into all this detail on this struct?
+For one, the `PyObject` struct is by far the most important struct in the CPython C API.
+Also, because the layout of `PyObject` is one of the main sources of tension that led to the development of two new python ABIs in recent years.
+We'll get more into the history and future of the Python ABI below.
+
 All Python objects correspond in C to an instance of `PyObject` or a type that extends the `PyObject` struct.
 Until Python 3.13, the `PyObject` struct had the following layout on 64-bit architectures:
 
@@ -142,34 +146,38 @@ struct PyObject {
 }
 ```
 
-Here, `Py_ssize_t` is a signed integer that is used to represent sizes in CPython.
-In this case, it represents the [reference count](https://en.wikipedia.org/wiki/Reference_counting) of the object - the number of other data structures that reference this object.
+Here, [`Py_ssize_t`](https://docs.python.org/3/c-api/intro.html#c.Py_ssize_t) is a signed integer that is used to represent sizes in the CPython C API.
+In this case, `ob_size` represents the [reference count](https://en.wikipedia.org/wiki/Reference_counting) of the object - the number of other data structures that reference this object.
 This is used to manage memory: the reference count is incremented and decremented as an object is passed between different Python modules and functions.
-When the reference count goes to zero the object is de-allocated.
-If you're curious why a signed integer to represent a strictly positive count: using a signed integer would catostrophically wrap around to a large positive value if the reference count ever underflows, with a signed integer you would see a negative reference count: an obviously invalid state.
+When the reference count goes to zero, the object is de-allocated.
+If you're curious why Python uses a signed integer to represent a strictly positive count: a signed integer would catostrophically wrap around to a large positive value if the reference count ever underflows.
+With a signed integer you would see a negative reference count: an obviously invalid state.
 
-The other field is a pointer to the type object.
-`PyTypeObject` is another struct that extends `PyObject` and is used to represent all Python types.
+The other field, `ob_type` is a pointer to the type of the object.
+Since this is Python and even types are objects, `PyTypeObject` is another struct that extends `PyObject`.
 
-Taken together, these two pieces of information are always tracked on every Python object. In some sense, the object _is_ the reference count, type, and the address of the `PyObject` struct.
+Taken together, these two pieces of information, the reference count and the type, are always tracked on every Python object. In some sense, an object _is_ the address of the `PyObject` struct.
 
-To make that all a little more concrete, `object()` in Python instantiates a `PyObject` instance in ther interpreter runtime, while `dict()` instantiates a `PyDictObject` struct - a different struct that extends `PyObject`.
+To make that all a little more concrete, `object()` in Python instantiates a `PyObject` instance in the interpreter runtime, while `dict()` instantiates a `PyDictObject` struct - a different struct that extends `PyObject`.
 That is, the first two fields of `PyDictObject` are exactly the same as `PyObject`: all Python objects correspond either to an instance of `PyObject` or a struct that extends `PyObject.
 
-You may wonder: why go into all this detail on this struct? Because the layout of `PyObject` is one of the main sources of tension that led to the development of two new python ABIs in recent years. We'll get more into the history and future of the Python ABI below.
-
-## The Past and Future of the Python ABI
-
-### The Version-Specific ABI and the Python 2 -> 3 transition
+## The Layers of Python ABI
 
 In the early days, there wasn't much distinction between "the interpreter" and "what's exposed by the C API": one simply was able to monkey around at will with internal state in the interpreter.
 While this enabled lots of cool stuff, it also had a cost: extensions regularly broke with different Python releases, requiring careful fixes to adapt to changes in interpreter internals.
 This also introduced a design pressure to freeze internals, lest people building on Python complain about changes breaking their code.
 
-### Python 3 and the Stable ABI: "abi3"
+These days there is a much better distinction between CPython internals and publicly exposed API, with all signs pointing towards the trend of isolating interpreter internals to continue in the future.
+This is managed by breaking up the "full" C API surface used by the interpreter into five different layers, illustrated in the diagram below.
 
-### The Free-Threaded ABI
+### The Version-Specific ABI
+
+### The Stable ABI: `abi3`
+
+### The Free-Threaded ABI: `cp31Xt`
 
 ## A new stable ABI for Python 3.15
 
-### The Opaque PyObject ABI: "abi3t"
+### The Free-Threaded Stable ABI: `abi3t`
+
+### Advice for Project Maintainers
