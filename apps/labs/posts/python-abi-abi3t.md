@@ -6,10 +6,10 @@ description: 'An introduction to the concept of the Application Binary Interface
 category: [PyData ecosystem]
 featuredImage:
   src: /posts/python-abi-abi3t/cpython_api_layers_listing.png
-  alt: 'Five nested ellispes illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API". The next enclosed ellipse is red and is labeled "Private API`. The next enclosed ellipse is yellow and is labeled "Unstable API". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green and is labeled "Limited API".'
+  alt: 'Five nested ellipses illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API". The next enclosed ellipse is red and is labeled "Private API". The next enclosed ellipse is yellow and is labeled "Unstable API". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green and is labeled "Limited API".'
 hero:
   imageSrc: /posts/python-abi-abi3t/cpython_api_layers_hero.png
-  imageAlt: 'Five nested ellispes illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API". The next enclosed ellipse is red and is labeled "Private API`. The next enclosed ellipse is yellow and is labeled "Unstable API". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green and is labeled "Limited API".'
+  imageAlt: 'Five nested ellipses illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API". The next enclosed ellipse is red and is labeled "Private API". The next enclosed ellipse is yellow and is labeled "Unstable API". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green and is labeled "Limited API".'
 ---
 
 # What Every Python Developer Should Know About the CPython ABI
@@ -20,7 +20,7 @@ Why did I begin this post's title with "What _Every_ Python Developer Should Kno
 Aren't these low-level details the kind of thing we can ignore most of the time in a high-level language like Python?
 
 In this post I hope to answer all these questions and build up your intuition about these topics.
-I also hope you'll learn some useful information about how Python projects that include native extensions are distributed, what the ABI compatibility tags that show up in wheel filenames mean, and how projects can choose to target different python ABIs depending on the tradeoffs they want to make.
+I also hope you'll learn some useful information about how Python projects that include native extensions are distributed, what the ABI compatibility tags that show up in wheel filenames mean, and how projects can choose to target different Python ABIs depending on the tradeoffs they want to make.
 
 ## The CPython interpreter runtime and C API
 
@@ -51,7 +51,7 @@ It's precisely the set of C macros, typedefs, functions, and structs exposed by 
 This constitutes an enormous number of symbols.
 It's possible to write code in C that allows similar functionality to any arbitrary Python script at the cost of compilation, verbosity, and exposure to the pitfalls of the C programming language.
 The reward is raw execution speed.
-It is often possible to achieve order-of-magnitude or even several order-or-magnitude size speedups by translating Python code to a compiled language that can call into the C API.
+It is often possible to achieve order-of-magnitude or even several order-of-magnitude speedups by translating Python code to a compiled language that can call into the C API.
 The [Cython](https://cython.readthedocs.io/en/latest/) programming language takes advantage of this by (among other things) literally compiling Python code to a C "script" that when linked into a larger program behaves identically to the Python code it was compiled from.
 
 What isn't the C API?
@@ -64,7 +64,7 @@ The concrete ABI conventions used by machine code that C API calls compile to ar
 
 In this section I will explain exactly what an application binary interface (ABI) is. To separate out Python-specific details from platform-specific details I will also refer to the Python ABI and the platform ABI, respectively, in the discussion below.
 
-### What is a platofrm ABI?
+### What is a platform ABI?
 
 The platform ABI governs details of how exactly machine code executes on each architecture: how a compiler translates calling a C function like [`PyDict_GetItemRef`](https://docs.python.org/3/c-api/dict.html#c.PyDict_GetItemRef) into a concrete set of machine code that sets CPU registers and other platform-specific details per the specification of whatever platform the code ultimately runs on.
 
@@ -123,7 +123,7 @@ We'll see below why this is the case and how the new `abi3t` ABI in Python 3.15 
 
 ### What is the Python ABI?
 
-The Python ABI includes all of the symbols - the variables and function declarations exposed in `Python.h`.
+The Python ABI includes all of the symbols — the variables and function declarations — exposed in `Python.h`.
 A symbol in the ABI corresponding to a C API function holds the name of the function, the number of arguments, the types of the arguments, and the type of the value returned by the function, if any.
 Many variables exposed in the C headers are C structs, so the layout of these structs is also part of the ABI.
 The layout of the struct is the order and types of all of the members of the struct.
@@ -157,23 +157,23 @@ struct PyObject {
 ```
 
 Here, [`Py_ssize_t`](https://docs.python.org/3/c-api/intro.html#c.Py_ssize_t) is a signed integer type that is used to represent sizes in the CPython C API.
-In this case, the `ob_refcnt` field represents the [reference count](https://en.wikipedia.org/wiki/Reference_counting) of the object - the number of other data structures that reference an instance of the `PyObject` struct.
+In this case, the `ob_refcnt` field represents the [reference count](https://en.wikipedia.org/wiki/Reference_counting) of the object — the number of other data structures that reference an instance of the `PyObject` struct.
 This is used to manage memory: the reference count is incremented and decremented as an object is passed between different Python modules and functions.
-When the reference count goes to zero, the object is de-allocated.
+When the reference count goes to zero, the object is deallocated.
 If you're curious why Python uses a signed integer to represent a strictly positive count: a signed integer would catastrophically wrap around to a large positive value if the reference count ever underflows.
 With a signed integer you would see a negative reference count: an obviously invalid state.
 
 The other field, `ob_type`, is a pointer to the type of the object.
 Since this is Python and even types are objects, `PyTypeObject` is another struct that extends `PyObject`.
 
-Taken together, these two pieces of information, the reference count and the type, are always tracked on every Python object. In some sense, an object _is_ the address and content of a `PyObject` instance or a instance of a struct that extends `PyObject`.
+Taken together, these two pieces of information, the reference count and the type, are always tracked on every Python object. In some sense, an object _is_ the address and content of a `PyObject` instance or an instance of a struct that extends `PyObject`.
 
-To make that all a little more concrete, `object()` in Python instantiates a `PyObject` instance in the interpreter runtime, while `dict()` instantiates a `PyDictObject` struct - a different struct that extends `PyObject`.
+To make that all a little more concrete, `object()` in Python instantiates a `PyObject` instance in the interpreter runtime, while `dict()` instantiates a `PyDictObject` struct — a different struct that extends `PyObject`.
 That is, the first two fields of `PyDictObject` are exactly the same as `PyObject`.
 
 ## The Layers of the CPython C API
 
-In the early days, there wasn't much distinction between "the interpreter" and "what's exposed by the C API": one simply was able to monkey around at will with internal state in the interpreter.
+In the early days, there wasn't much distinction between "the interpreter" and "what's exposed by the C API": you simply were able to monkey around at will with internal state in the interpreter.
 While this enabled lots of cool stuff, it also had a cost: extensions regularly broke with different Python releases, requiring careful fixes to adapt to changes in interpreter internals.
 This also introduced a design pressure to freeze internals, lest people building on Python complain about changes breaking their code.
 
@@ -184,12 +184,12 @@ This is managed by breaking up the "full" C API surface used by the interpreter 
  <figure style={{ textAlign: 'center' }}>
    <img
      src="/posts/python-abi-abi3t/cpython_api_layers.png"
-     alt='Five nested ellipses illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API, exposed only if `Py_BUILD_CORE` is defined. The next enclosed ellipse is red and outlined with a dashed line defined in the legend to mean "Usable with `#include "Python.h"`". The red ellipse is labeled "Private API `_Py*` prefix`. The next enclosed ellipse is yellow and is labeled "Unstable API `PyUnstable_*` prefix". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green with a dark shaded outline the legend defines to mean "Usable if `Py_LIMITED_API` is defined and is labeled "Limited API".'
+     alt='Five nested ellipses illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API, exposed only if `Py_BUILD_CORE` is defined". The next enclosed ellipse is red and outlined with a dashed line defined in the legend to mean "Usable with `#include "Python.h"`". The red ellipse is labeled "Private API `_Py*` prefix". The next enclosed ellipse is yellow and is labeled "Unstable API `PyUnstable_*` prefix". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green with a dark shaded outline the legend defines to mean "Usable if `Py_LIMITED_API` is defined" and is labeled "Limited API".'
      style={{position:'relative',left:'12%',width:'70%'}}
    />
  </figure>
 
-Below we describe each of these layers and explain how this separation enables many different usecases.
+Below we describe each of these layers and explain how this separation enables many different use cases.
 
 ### Internal C API
 
@@ -203,7 +203,7 @@ For 99.9% of people who are not CPython contributors, the internal API should no
 
 The public API is the innermost four layers in the diagram above. This is the full set of API symbols available to a C program that has `#include "Python.h"` at the top and no other special preprocessor macros defined at build time.
 
-Despite the name, it also includes many details that the CPython project considers private according to their formal stability policty.
+Despite the name, it also includes many details that the CPython project considers private according to their formal stability policy.
 
 ### Private C API
 
@@ -253,7 +253,7 @@ These two ABI stability guarantees enable two different kinds of builds for dist
 
 ### The version-specific ABI: `cp3XY`
 
-The guarantee that the Python version-specific C API does not change within a Python minor release series corresponds to a stability policty for the CPython version-specific ABI.
+The guarantee that the Python version-specific C API does not change within a Python minor release series corresponds to a stability policy for the CPython version-specific ABI.
 In practice, it means that extension modules and binary wheels built using Python 3.15.0b1 can be imported using any subsequent version of Python 3.15, even years into the future.
 
 Projects shipping binary wheels using the version-specific ABI have ABI compatibility tags in the wheel filename like `cp314-cp314`. If a wheel has this particular tag, that indicates the wheel has binaries that are built using the GIL-enabled version-specific ABI for Python 3.14.
@@ -275,28 +275,28 @@ There is one major problem with this scheme: `abi3` as it was originally defined
 
 As you may have heard, it's possible to use a version of CPython that does not have a [global interpreter lock](https://docs.python.org/3/glossary.html#term-global-interpreter-lock) (the GIL)
 
-What is the GIL and why is it important for this discussion? It's actually very much related to the layout of the `PyObject` struct. As we saw above, `PyObject` contains a reference count field `ob_refcnt`, that holds the number of live referenes to the Python object.
+What is the GIL and why is it important for this discussion? It's actually very much related to the layout of the `PyObject` struct. As we saw above, `PyObject` contains a reference count field `ob_refcnt`, that holds the number of live references to the Python object.
 If the reference count goes to zero the object is deallocated.
 In CPython, the object is deallocated immediately.
 Critically, Python also exposes access to OS-level threads via the `threading` module and in principle, without a global lock preventing it, could expose _simultaneous_ access to the same Python object.
 
-So you have a situation where a C struct has a signed integer that may be incremented or decremented at arbitrary times -- even simultaneously -- from any arbitrary number of threads.
+So you have a situation where a C struct has a signed integer that may be incremented or decremented at arbitrary times — even simultaneously — from any arbitrary number of threads.
 This is a classic case of a problem that is susceptible to pitfalls of concurrency: [races](https://en.wikipedia.org/wiki/Race_condition).
-This particular case, where the race to increment or decrement the integer, happens in C code, is suseptible to a particularly bad kind of multithreaded race: a [data race](https://en.wikipedia.org/wiki/Race_condition#Data_race).
+This particular case, where the race to increment or decrement the integer, happens in C code, is susceptible to a particularly bad kind of multithreaded race: a [data race](https://en.wikipedia.org/wiki/Race_condition#Data_race).
 In the specification of the C, C++, and Rust languages, the result of what happens after [these sorts of races are undefined behavior](https://www.hboehm.info/c++mm/why_undef.html).
 
 This problem was realized quite early on in the development of CPython.
 To fix it, the language grew the global interpreter lock.
 In order to interact with Python objects, you need to acquire a global [mutex](<https://en.wikipedia.org/wiki/Lock_(computer_science)>) and release it as soon as you are done using the Python objects or the CPython interpreter runtime.
 
-Since incrementing and decrementing reference counts should only happen with the GIL mutex held, it's therefore perfectly safe to arbitrarily share Python objects: one can be confident that only one thread at a time can actually see or mutate the state of hte object.
+Since incrementing and decrementing reference counts should only happen with the GIL mutex held, it's therefore perfectly safe to arbitrarily share Python objects: one can be confident that only one thread at a time can actually see or mutate the state of the object.
 
 There is a big downside to this design decision: the GIL means it is impossible to actually use more than one CPU core to run Python code.
 In particular: only one core can run code that holds the GIL.
 Here, "code that holds the GIL" corresponds to all "pure" Python code that uses only builtins and does not use third-party code or the standard library.
 Some code in third-party extensions and the standard library does release the GIL and allow more than one CPU to simultaneously execute code, but in practice one often finds that scaling is abysmal due to the impact of [Amdahl's "law"](https://en.wikipedia.org/wiki/Amdahl%27s_law): any time-slice of an application's execution that must run on only one CPU will eventually prevent improving parallel scaling as a function of thread count.
 
-That is why there have been several efforts over the years -- to varying degrees of success -- to remove the GIL from the CPython implementation.
+That is why there have been several efforts over the years — to varying degrees of success — to remove the GIL from the CPython implementation.
 Over the past few years, one of these approaches seems to have stuck.
 It looks like a free-threaded Python, one with no global interpreter lock and no limit to multithreaded concurrency in pure Python code, is the future of CPython.
 
