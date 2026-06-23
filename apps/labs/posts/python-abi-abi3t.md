@@ -303,6 +303,77 @@ It looks like a free-threaded Python, one with no global interpreter lock and no
 
 ### The Free-Threaded ABI: `cp3XYt`
 
+Removing the GIL required making fundamental changes to the CPython interpreter.
+Earlier we saw how the `PyObject` struct has a `ob_refcnt` field, which must be incremented and decremented safely under concurrent mutation.
+In the GIL-enabled build, a global lock serializes access to the field, so normal integer addition and subtraction can be used.
+Until the arrival of the free-threaded interpreter, the function in the C API for incrementing the refcnt field, `Py_INCREF`, was defined in CPython [like this](https://github.com/python/cpython/blob/3.11/Include/object.h#L502) like this:
+
+```C
+static inline void Py_INCREF(PyObject *op)
+{
+    op->ob_refcnt++;
+}
+```
+
+[Early attempts](https://lwn.net/Articles/689548/?featured_on=pythonbytes) to remove the GIL attempted to preserve this simplicity and simply replace `ob_refcnt++` with [atomic](https://en.wikipedia.org/wiki/Linearizability#Primitive_atomic_instructions) addition.
+Atomic operations, available on modern CPUs and with modern versions of the C standard and C compilers, allow for thread-safe sharing of objects without any explicit locks.
+Instead, the responsibility for serializing operations using atomic instructions falls on the compiler and the CPU.
+While atomics are lower overhead than a single global lock they are still higher overhead than an integer addition or subtraction, particularly for objects that are shared between multiple CPU threads.
+Remember: sharing objects between CPU threads is the entire point of this exercise.
+
+The fix that ultimately stuck was developed by [Sam Gross](https://github.com/colesbury) and others working on the Python runtime team at Meta.
+They key insight that led to scalable free-threaded Python was to give up on ensuring that all threads need to agree on the exact reference count for all objects.
+Instead, split the counts between references that are from other objects "owned" by the same thread and references from objects on other threads.
+Local references can use cheap integer addition and subtraction and shared references can be deferred until a point when the interpreter can synchronize state between threads.
+
+Atomic operations alone are not enough to ensure evaluating Python bytecode is thread-safe.
+There must also be a way to ensure accessing or mutating an object's state happens reliably.
+Rather than use a _global_ lock, the solution Sam and collaborators ended up on was to use many fine-grained lock.
+In fact, one lock per python object.
+
+To make that a little more concrete: on Python 3.15, the `PyObject` struct is defined like this on the free-threaded build of CPython:
+
+```C
+struct PyObject {
+    uinptr_t ob_tid;           // id of owning thread
+    uint16_t ob_flags;
+    PyMutex ob_mutex;          // per-object lock
+    uint8_t ob_gc_bits;
+    uint32_t ob_ref_local;     // local reference count
+    Py_ssize_t ob_ref_shared;  // shared (atomic) reference count
+}
+```
+
+You can see how the fields in the struct correspond to the two design decisions I introduced above: shared and local refcounts, an "owning" thread ID to identify when objects are local, and a shared reference count.
+
+The implementation of `Py_INCREF` is also correspondingly more complicated [on the free-threaded build](https://github.com/python/cpython/blob/6920036f287480f7d39d6a4005803aeac27aff3f/Include/refcount.h#L272-L284):
+
+```C
+static inline void Py_INCREF(PyObject *op)
+{
+    uint32_t local = _Py_atomic_load_uint32_relaxed(&op->ob_ref_local);
+    uint32_t new_local = local + 1;
+    if (new_local == 0) {
+        _Py_INCREF_IMMORTAL_STAT_INC();
+        // local is equal to _Py_IMMORTAL_REFCNT_LOCAL: do nothing
+        return;
+    }
+    if (_Py_IsOwnedByCurrentThread(op)) {
+        _Py_atomic_store_uint32_relaxed(&op->ob_ref_local, new_local);
+    }
+    else {
+        _Py_atomic_add_ssize(&op->ob_ref_shared, (1 << _Py_REF_SHARED_SHIFT));
+    }
+}
+```
+
+It's not so important you understand what's happening here except to see that this is a lot more complicated than simply incrementing an integer!
+Although it isn't much more complicated than that on the hot path for an unshared object, the slow paths for shared objects add a lot of complexity.
+
+So this was the design trade-off: increase the complexity of the interpreter and force extensions to explicitly support this new ABI with a new layout for `PyObject`.
+
+Please refer to [Victor Stinner's post](https://vstinner.github.io/free-threading-reference-counting.html) on reference counting in free-threaded Python for a much more detailed discussion of this topic.
+
 ## A new stable ABI for Python 3.15
 
 ### The Free-Threaded Stable ABI: `abi3t`
