@@ -368,13 +368,47 @@ static inline void Py_INCREF(PyObject *op)
 ```
 
 It's not so important you understand what's happening here except to see that this is a lot more complicated than simply incrementing an integer!
-Although it isn't much more complicated than that on the hot path for an unshared object, the slow paths for shared objects add a lot of complexity.
+Although it isn't much more complicated than that on the hot path for an unshared object, the slow paths for shared objects add a lot of visual complexity.
 
-So this was the design trade-off: increase the complexity of the interpreter and force extensions to explicitly support this new ABI with a new layout for `PyObject`.
+So this was the design trade-off: enable multithreaded parallelism but increase the complexity of the interpreter and force extensions to explicitly support this new ABI with a new layout for `PyObject`. You can read [PEP 703](https://peps.python.org/pep-0703/) and [PEP 779](https://peps.python.org/pep-0779/) for detailed discussions of why it's worth it for CPython to choose complexity over simplicity in this case.
 
-Please refer to [Victor Stinner's post](https://vstinner.github.io/free-threading-reference-counting.html) on reference counting in free-threaded Python for a much more detailed discussion of this topic.
+Please also refer to [Victor Stinner's post](https://vstinner.github.io/free-threading-reference-counting.html) on reference counting in free-threaded Python for a much more detailed discussion of this topic.
 
 ## A new stable ABI for Python 3.15
+
+As we saw above, the `PyObject` struct has a differently layout on free-threaded Python.
+That means it does not have an ABI that is compatible with the GIL-enabled build.
+In other words, it is not possible to load a compiled extension module targeting the GIL-enabled build because lots of things in the C API rely on the layout of `PyObject`.
+
+Just one example that shows up in every single C extension that defines a module: the [`PyModuleDef` struct](https://docs.python.org/3/c-api/module.html#c.PyModuleDef). For convenience and historical reasons, this struct _extends_ the `PyObject` struct.
+That means if `PyObject` has a different size, when CPython loads an extension and accesses data stored on the `PyMethodDef` struct to set up a module object it will access data at the wrong offset.
+Most likely, this will lead to an immediate crash.
+
+For that reason, necessitated defining a new ABI tag for the free-threaded interpreter. To make that concrete, let's try installing `cryptography` using free-threaded Python 3.14:
+
+```bash
+Collecting cryptography
+  Downloading cryptography-49.0.0-cp314-cp314t-macosx_11_0_arm64.whl.metadata (4.3 kB)
+Collecting cffi>=2.0.0 (from cryptography)
+  Downloading cffi-2.0.0-cp314-cp314t-macosx_11_0_arm64.whl.metadata (2.6 kB)
+Collecting pycparser (from cffi>=2.0.0->cryptography)
+  Downloading pycparser-3.0-py3-none-any.whl.metadata (8.2 kB)
+Downloading cryptography-49.0.0-cp314-cp314t-macosx_11_0_arm64.whl (4.0 MB)
+Downloading cffi-2.0.0-cp314-cp314t-macosx_11_0_arm64.whl (185 kB)
+Downloading pycparser-3.0-py3-none-any.whl (48 kB)
+Installing collected packages: pycparser, cffi, cryptography
+Successfully installed cffi-2.0.0 cryptography-49.0.0 pycparser-3.0
+
+```
+
+Compared with what happens on the GIL-enabled build, which I described above, there are some similarities.
+All three packages resolve to compatibile wheel builds.
+The `pycparser` wheel which has a `py3-none-any` is also compatible with the free-threaded build: pure Python code doesn't care about the layout of PyObject and doesn't need to explicitly support the free-threaded build.
+CFFI also ships a version-specific wheel for the free-threaded build, with the ABI tag for free-threaded Python 3.14: `cp314t`.
+Wheels compiled using this ABI tag use the free-threaded layout for `PyObject`.
+
+Instead of installed an `abi3` wheel for cryptography, we installed a `cp314t` version-specific wheel.
+It turns out that there is no equivalent to `abi3` for Python 3.14, so `cryptography` uploads a version-specific wheel.
 
 ### The Free-Threaded Stable ABI: `abi3t`
 
