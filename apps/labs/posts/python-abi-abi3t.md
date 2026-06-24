@@ -21,6 +21,7 @@ Aren't these low-level details the kind of thing we can ignore most of the time 
 
 In this post I hope to answer all these questions and build up your intuition about these topics.
 I also hope you'll learn some useful information about how Python projects that include native extensions are distributed, what the ABI compatibility tags that show up in wheel filenames mean, and how projects can choose to target different Python ABIs depending on the tradeoffs they want to make.
+By the end, you should be able to look at any wheel filename and know which Python interpreters it will install on — and why.
 
 ## The CPython interpreter runtime
 
@@ -111,8 +112,7 @@ Let's pay particular attention to the filenames of the wheel files, because most
    />
  </figure>
 
-The pieces that are interesting for ABI compatibility are the third, fourth, and fifth tags.
-These are the [compatibility tags](https://packaging.python.org/en/latest/specifications/platform-compatibility-tags/) for the wheels. The "python" tag indicates either the exact version supported by the wheel or the minimum supported version.
+The third, fourth, and fifth pieces — the [compatibility tags](https://packaging.python.org/en/latest/specifications/platform-compatibility-tags/) — are the ones that matter for ABI compatibility. The "python" tag indicates either the exact version supported by the wheel or the minimum supported version.
 Whether or not the version indicates a minimum or an exact version depends on the next ABI tag.
 The `py3` tag used by `pycparser` indicates that this is usable by _any_ Python 3 interpreter running _any_ Python version, not necessarily just CPython.
 The `cp311` and `cp314` tags indicate that the `cryptography` and `cffi` wheels are only usable with CPython. Other Python implementations will need a different wheel.
@@ -121,8 +121,8 @@ The ABI tag indicates the Python ABI the wheel file targets.
 The `none` ABI tag used by `pycparser` indicates that the wheel doesn't target a particular native ABI in particular: the wheel includes only pure-Python code and binary compatibility doesn't need to be considered.
 The `cp314` tag used by `cffi` indicates that the wheel supports Python 3.14 exactly and no other minor Python version.
 Finally, the `abi3` tag used by `cryptography` indicates that this wheel targets the [Python Stable ABI subset](https://docs.python.org/3/c-api/stable.html#stable-application-binary-interface), and is forward-compatible with all future Python 3 versions that support the `abi3` ABI.
-Notably `abi3` wheels are not installable on [the free-threaded build](https://py-free-threading.github.io) of CPython.
-We'll see below why this is the case and how the new `abi3t` ABI in Python 3.15 will ameliorate this limitation going forward.
+
+> **Heads up:** `abi3` wheels are _not_ installable on [the free-threaded build](https://py-free-threading.github.io) of CPython. We'll see below why, and how the new `abi3t` ABI in Python 3.15 fixes this.
 
 ### What is the Python ABI?
 
@@ -262,7 +262,7 @@ There are two levels of ABI stability provided by CPython:
 Of course "never" is a little strong. If a particularly bad design flaw is discovered, an item can be removed from the limited API, and the _implementation_ behind its ABI entry replaced with one that raises at runtime.
 The _symbol_ itself stays in the ABI, though, so an extension that uses the removed function still compiles, links, and imports successfully. It only risks a runtime error later, on a newer Python, if it actually _calls_ the removed function.
 
-These two ABI stability guarantees enable two different kinds of builds for distributors of extension modules:
+These two guarantees map onto two of the API layers from the previous section: the version-specific API backs the per-release `cp3XY` ABI, and the limited API's stable subset backs the forward-compatible `abi3` ABI. Each enables a different kind of build for distributors of extension modules:
 
 ### The version-specific ABI: `cp3XY`
 
@@ -285,6 +285,8 @@ Because of the stability guarantees provided by the stable subset of the CPython
 There is one major problem with this scheme: `abi3` as it was originally defined shared a detail with the version-specific ABI: the layout of the `PyObject` struct is exposed.
 
 ### The CPython ABI and the GIL
+
+_Where we are:_ we now have two ABIs — the per-release `cp3XY` and the build-once `abi3` — but both bake in the layout of `PyObject`. Free-threaded Python changes that layout, and to see why, we need to talk about the GIL.
 
 As you may have heard, it's possible to use a version of CPython that does not have a [global interpreter lock](https://docs.python.org/3/glossary.html#term-global-interpreter-lock) (the GIL).
 
@@ -458,10 +460,9 @@ and finally,
 
 With all these pieces, it became possible to define a C extension implementing Python functions, modules, and types without relying on the layout of `PyObject`.
 
-Since the free-threaded build does not have a GIL, to use `abi3t`, extensions should be thread-safe.
-This falls naturally out of how one selects an `abi3t` build in a C or C++ extension: by simultaneously defining the `Py_LIMITED_API` and `Py_GIL_DISABLED` macros.
-
-Because the extension doesn't depend on the layout of `PyObject` it is compatible with _both_ interpreter builds or any future interpreter build that decides to make further changes to the layout of `PyObject`. This means abi3t extensions should not rely on the GIL for thread safety and must be written in a thread-safe manner.
+You select an `abi3t` build in a C or C++ extension by simultaneously defining the `Py_LIMITED_API` and `Py_GIL_DISABLED` macros.
+Because the extension doesn't depend on the layout of `PyObject`, it is compatible with _both_ interpreter builds — and any future build that changes that layout again.
+Since the free-threaded build has no GIL, `abi3t` extensions can't rely on it for thread safety — they must be written to be thread-safe.
 
 ### Advice for Project Maintainers that ship `abi3` wheels
 
@@ -516,3 +517,11 @@ Cython supports abi3t via [an experimental branch](https://github.com/cython/cyt
 Setuptools support will be added once [PR #5193](https://github.com/pypa/setuptools/pull/5193) is merged and appears in a release.
 Meson-python support also lives in [an open PR](https://github.com/mesonbuild/meson-python/pull/856) currently.
 Installing an abi3t wheel should be fully supported across all installers, including both `pip` and `uv`.
+
+## Key takeaways
+
+- An **API** is a source-level contract — the function signatures, macros, and types in `Python.h` — while an **ABI** is the binary-level contract — symbol names, struct layouts, and calling conventions — that compiled extensions actually depend on.
+- A wheel's ABI tag tells you its compatibility: `none` (pure Python, installs anywhere), `cp3XY` / `cp3XYt` (version-specific — one build per CPython release, for the GIL or free-threaded build), and `abi3` / `abi3t` (stable — build once, runs on that version and every newer one).
+- The free-threaded build changes the layout of `PyObject`, so it needs its own ABIs; existing `abi3` wheels won't load on it.
+- `abi3t`, new in Python 3.15, is the stable ABI for the free-threaded build — the missing piece that lets a single wheel target free-threaded Python 3.15 and every release after it.
+- During the transition, shipping `abi3` plus a `cp314t` wheel (and `abi3.abi3t` from 3.15 on) covers every interpreter version.
