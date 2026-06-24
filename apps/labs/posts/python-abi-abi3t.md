@@ -54,7 +54,8 @@ This constitutes an enormous number of symbols.
 It's possible to write C code that replicates the behavior of any Python script, at the cost of compilation, verbosity, and exposure to the pitfalls of the C programming language.
 The reward is raw execution speed.
 It is often possible to achieve order-of-magnitude or even several order-of-magnitude speedups by translating Python code to a compiled language that can call into the C API.
-The [Cython](https://cython.readthedocs.io/en/latest/) programming language takes advantage of this by (among other things) compiling Python code to C source that, once compiled and linked into a larger program, behaves exactly like the Python it was generated from.
+The [Cython](https://cython.readthedocs.io/en/latest/) programming language takes advantage of this by (among other things) compiling Python code to C source that, once compiled and linked into a larger program, behaves like the result of the Python it was generated from.
+This translation isn't always perfect, but it is serviceable enough to back the implementations of popular libraries like [Pandas](https://pandas.pydata.org/), [scikit-image](https://scikit-image.org/), or [scikit-learn](https://scikit-learn.org/).
 
 What isn't the C API?
 The C API is purely a construct of the C programming language.
@@ -201,26 +202,23 @@ As [the CPython developer guide](https://devguide.python.org/developer-workflow/
 Defining `Py_BUILD_CORE` and opting into using the internal C API is equivalent to saying you're willing to take on maintenance for code that can and will break at any time.
 For 99.9% of people who are not CPython contributors, the internal API should not be used.
 
-### The Public C API
-
-The public API is the innermost four layers in the diagram above. This is the full set of API symbols available to a C program that has `#include "Python.h"` at the top and no other special preprocessor macros defined at build time.
-
-Despite the name, it also includes many details that the CPython project considers private according to their formal stability policy.
-
 ### Private C API
 
-For historical reasons, the public API includes many private implementation details whose names are prefixed by a leading underscore.
+While this layer is _private_ in the sense that items in the private C API should not be used outside of CPython, it is "public" in the sense that items in the private C API are available after going `include "Python.h"` with no other customization.
+Names in the C API that have a leading undercosre are private.
 To pick a random example: [`_PyDict_GetItem_KnownHash`](https://github.com/python/cpython/blob/2e5843e13fcfd768a435d82e6182af403844432c/Include/cpython/dictobject.h#L45-L46) allows users to bypass the normal Python `dict` interface to directly access a dict entry with an already-computed hash.
-This optimization is useful sometimes in the interpreter, so it's defined, but it's not a documented primitive, so it may either be deprecated and eventually removed or possibly get promoted to an official API function.
-Sometimes symbols are exposed like this for technical reasons, sometimes for historical reasons, and sometimes because a CPython user requested the ability to do so with the knowledge that there is no API stability guarantee for these functions.
+This optimization is useful sometimes in the interpreter, so it's defined, but it's not a documented primitive, so there are no guarantees about it being available in a future version of the C API.
+It _is_ an item in the Python ABI, so it does have some stability guarantees because the ABI has stability guarantees.
+Sometimes symbols are exposed like this for technical reasons, sometimes for historical reasons, and sometimes because a CPython user requested the ability to do something and was OK with the lack of API stability.
 
 ### Unstable C API
 
 The next innermost layer encloses all of the documented functionality in the CPython C API.
 There is an extra layer here because not everything that's documented is stable: the outermost _documented_ layer is [the unstable C API](https://docs.python.org/3/c-api/stable.html#unstable-c-api).
 If a serious defect is discovered in an unstable C API item it may be radically changed or removed entirely in a CPython minor release.
-These are documented symbols that serve a real purpose, but that the CPython developers are not ready to commit to supporting long-term because they rely on interpreter implementation details.
-The unstable API is most useful for projects or organizations who can regularly follow and contribute to CPython C API development and can make appropriate judgement calls about the suitability of using these API functions.
+These items serve a real purpose, but the CPython developers are not ready to commit to long-term support.
+Usually this is because unstable API items rely on or expose interpreter implementation details and it's not yet clear if the resulting behavior should be enshrined in the "official" C API.
+The unstable API is most useful for projects or organizations who can regularly follow and contribute to the CPython C API.
 
 ### The Version-Specific API
 
@@ -228,14 +226,23 @@ The next innermost layer is the Python version-specific C API and includes all s
 While public symbols in the CPython C API can be removed following a deprecation period or to fix a serious defect, this only happens after a period of public discussion and consideration of the community impact. Critically, CPython has a policy not to add or remove items in the version-specific API from the first beta release of a Python minor version onward.
 For example, this year Python 3.15.0b1 came out in May and that release froze the Python 3.15 version-specific C API.
 All subsequent betas, release candidates, and official releases share the same set of API items, including function signatures and type layouts, with no changes allowed until the next Python minor release.
+This also means the ABI is frozen.
+We'll discuss later why that's important for projects that want to release binaries.
 
 ### Limited C API
 
-Finally, the most restricted innermost layer corresponds, fittingly, to the "Limited" C API.
-A somewhat confusing point that is often glossed over is that the limited C API _also_ changes from Python version to Python version. One can build extensions that target _either one_ of, say, the Python 3.13 version-specific API or the limited API.
-Either by defining a compiler macro or selecting an option in a build backend, one selects a particular limited API version to target.
-It's possible to target limited API versions older than the Python version used to build an extension.
+Finally, the most restricted innermost layer corresponds, fittingly, to the "Limited" C API, a deliberately curated subset of the full CPython C API.
+The limited C API corresponds to a subset of the full Python ABI: the stable Python ABI.
+The CPython project [commits](https://docs.python.org/3/c-api/stable.html#stable-abi) to keeping items in the stable ABI as part of the Python ABI forever.
+C or C++ extensions can opt into compiling for this mode by defining the `Py_LIMITED_API` macro to a hex constant that corresponds to a particular CPython version.
+
+A somewhat confusing point that is often glossed over is that the limited C API _also_ changes from Python version to Python version.
+One can build extensions that target _either one_ of, say, the Python 3.13 version-specific API or the limited API.
+It's also possible to target limited API versions older than the Python version used to build an extension.
 An extension or wheel build targeting, say, the Python 3.10 limited API can be imported on Python 3.10 and _any newer Python release_.
+
+Items in the limited API can be deprecated and removed, but the corresponding symbol in the ABI must remain available forever to ensure binary compatibility.
+That means that the limited API is not necessarily forward compatible: an extension targeting the limited API for Python 3.9 may not necessarily compile on the limited API targeting Python 3.12.
 
 There is a big "but" in the above claim that targeting the limited API allows supporting _any_ Python version newer than Python 3.10.
 It turns out that this guarantee depends critically on the CPython ABI and how free-threaded Python has introduced two new ABIs to target on new Python versions.
