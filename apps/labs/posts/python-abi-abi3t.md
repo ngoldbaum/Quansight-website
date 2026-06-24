@@ -134,6 +134,15 @@ The layout of the struct is the order and types of all of the members of the str
 Notably, the Python ABI does _not_ include things that _are_ in the C API.
 This includes all items that are particular to the conventions of the C language or the C preprocessor like [macros](<https://www.cs.yale.edu/homes/aspnes/pinewiki/C(2f)Macros.html>), [typedefs](https://en.wikipedia.org/wiki/Typedef), and [inline functions](<https://en.wikipedia.org/wiki/Inline_(C_and_C%2B%2B)>).
 The Python ABI also doesn't depend on the names of the function arguments: all it cares about is how to store and lay out the instances of different types exposed in a C API in memory.
+The diagram below illustrates the distinction between the CPython C API and the Python ABI.
+
+ <figure style={{ textAlign: 'center' }}>
+   <img
+     src="/posts/python-abi-abi3t/api_vs_abi.png"
+     alt="A two-panel hand-drawn diagram contrasting the API and the ABI. The left panel, in violet and marked with a small C-source-file icon, is titled "API — Application Programming Interface" and lists three things the API covers, each with a code example: function signatures (PyObject *PyDict_GetItemRef(…)); macros, typedefs, and inline functions (Py_INCREF(op)); and the header you compile against (#include "Python.h"). The right panel, in blue and marked with a small computer-chip icon, is titled "ABI — Application Binary Interface" and lists three things the ABI covers: exported symbol names (PyDict_GetItemRef); struct sizes and field offsets, illustrated by a memory-layout diagram of PyObject as two 8-byte fields — ob_refcnt at byte offset 0 and ob_type at offset 8, 16 bytes total; and platform-specific details, illustrated by a matrix of operating systems (rows: Windows, macOS, and Linux) against CPU architectures (columns: x86-64, arm64, and ppc64le), with a green dot marking each supported build — x86-64 and arm64 for all three operating systems, and ppc64le for Linux only."
+     style={{position:'relative',left:'12%',width:'70%'}}
+   />
+ </figure>
 
 This can be a little confusing when working with the CPython C API and thinking about the difference between the ABI and API because many names in the C API are implemented as macros but logically behave as functions.
 Despite that, because of how they are implemented, these items do not appear in the Python ABI.
