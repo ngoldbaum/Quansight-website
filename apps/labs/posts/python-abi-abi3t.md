@@ -54,7 +54,7 @@ This constitutes an enormous number of symbols.
 It's possible to write C code that replicates the behavior of any Python script, at the cost of compilation, verbosity, and exposure to the pitfalls of the C programming language.
 The reward is raw execution speed.
 It is often possible to achieve order-of-magnitude or even several order-of-magnitude speedups by translating Python code to a compiled language that can call into the C API.
-The [Cython](https://cython.readthedocs.io/en/latest/) programming language takes advantage of this by (among other things) compiling Python code to C source that, once compiled and linked into a larger program, behaves like the result of the Python it was generated from.
+The [Cython](https://cython.readthedocs.io/en/latest/) programming language takes advantage of this by (among other things) compiling Python code to C source that, once compiled and linked into a larger program, behaves like the Python it was generated from.
 This translation isn't always perfect, but it is serviceable enough to back the implementations of popular libraries like [Pandas](https://pandas.pydata.org/), [scikit-image](https://scikit-image.org/), or [scikit-learn](https://scikit-learn.org/).
 
 What isn't the C API?
@@ -65,7 +65,7 @@ When C API calls are compiled, the resulting machine code follows a concrete set
 
 ## The Python ABI
 
-In this section I will explain exactly what an application binary interface (ABI) is. To separate out Python-specific details from platform-specific details I will also refer to the Python ABI and the platform ABI, respectively, in the discussion below.
+What exactly is an application binary interface? It helps to split it into two layers: the _platform ABI_ (platform-specific details) and the _Python ABI_ (Python-specific details), which I'll discuss in turn.
 
 ### What is a platform ABI?
 
@@ -152,11 +152,7 @@ C++ _is_ compatible with the C preprocessor, so you can use typedefs, macros, an
 
 ### The PyObject struct
 
-In this section we do a bit of a deep dive on one of the structs that are part of the Python ABI.
-Why go into all this detail on this struct?
-For one, the `PyObject` struct is by far the most important struct in the CPython C API and the Python ABI.
-Also, because the layout of `PyObject` is one of the main sources of tension that led to the development of two new Python ABIs in recent years.
-We'll get more into the history and future of the Python ABI below.
+`PyObject` is by far the most important struct in the CPython C API and the Python ABI, and its layout is one of the main sources of tension that led to two new Python ABIs in recent years — so it's worth a closer look.
 
 All Python objects correspond in C to an instance of `PyObject` or a struct that extends the `PyObject` struct.
 Until free-threaded Python (more on that below), the `PyObject` struct had the following layout on 64-bit architectures:
@@ -213,11 +209,11 @@ For 99.9% of people who are not CPython contributors, the internal API should no
 
 ### Private C API
 
-While this layer is _private_ in the sense that items in the private C API should not be used outside of CPython, it is "public" in the sense that items in the private C API are available after going `include "Python.h"` with no other customization.
-Names in the C API that have a leading undercosre are private.
+This layer is _private_ in the sense that its items shouldn't be used outside CPython, but "public" in the sense that they're available after a plain `#include "Python.h"`, with no special macros.
+Names in the C API with a leading underscore are private.
 To pick a random example: [`_PyDict_GetItem_KnownHash`](https://github.com/python/cpython/blob/2e5843e13fcfd768a435d82e6182af403844432c/Include/cpython/dictobject.h#L45-L46) allows users to bypass the normal Python `dict` interface to directly access a dict entry with an already-computed hash.
 This optimization is useful sometimes in the interpreter, so it's defined, but it's not a documented primitive, so there are no guarantees about it being available in a future version of the C API.
-It _is_ an item in the Python ABI, so it does have some stability guarantees because the ABI has stability guarantees.
+It _is_ part of the Python ABI, though, so it inherits the ABI's stability guarantees even though it carries no API guarantees.
 Sometimes symbols are exposed like this for technical reasons, sometimes for historical reasons, and sometimes because a CPython user requested the ability to do something and was OK with the lack of API stability.
 
 ### Unstable C API
@@ -311,7 +307,7 @@ Since incrementing and decrementing reference counts should only happen with the
 There is a big downside to this design decision: the GIL means it is impossible to actually use more than one CPU core to run Python code.
 In particular: only one core can run code that holds the GIL.
 Here, "code that holds the GIL" is essentially all Python-level code: the interpreter holds the GIL while it executes Python bytecode.
-Some code in third-party extensions and the standard library does release the GIL and allow more than one CPU to simultaneously execute code, but in practice one often finds that scaling is abysmal due to the impact of [Amdahl's "law"](https://en.wikipedia.org/wiki/Amdahl%27s_law): any time-slice of an application's execution that must run on only one CPU will eventually prevent improving parallel scaling as a function of thread count.
+Some extension and standard-library code does release the GIL so more than one CPU can run at once, but by [Amdahl's law](https://en.wikipedia.org/wiki/Amdahl%27s_law) the parts that must run single-threaded still cap how far an application can scale.
 
 That is why there have been several efforts over the years — to varying degrees of success — to remove the GIL from the CPython implementation.
 Over the past few years, one of these approaches seems to have stuck.
@@ -322,7 +318,7 @@ It looks like a free-threaded Python, one with no global interpreter lock and no
 Removing the GIL required making fundamental changes to the CPython interpreter.
 Earlier we saw how the `PyObject` struct has a `ob_refcnt` field, which must be incremented and decremented safely under concurrent mutation.
 In the GIL-enabled build, a global lock serializes access to the field, so normal integer addition and subtraction can be used.
-Until the arrival of the free-threaded interpreter, the function in the C API for incrementing the refcnt field, `Py_INCREF`, was defined in CPython [like this](https://github.com/python/cpython/blob/3.11/Include/object.h#L502) like this:
+Until the arrival of the free-threaded interpreter, the function in the C API for incrementing the refcnt field, `Py_INCREF`, was defined in CPython [like this](https://github.com/python/cpython/blob/3.11/Include/object.h#L502):
 
 ```C
 static inline void Py_INCREF(PyObject *op)
@@ -338,14 +334,14 @@ While atomics are lower overhead than a single global lock they are still higher
 Remember: sharing objects between CPU threads is the entire point of this exercise.
 
 The fix that ultimately stuck was developed by [Sam Gross](https://github.com/colesbury) and others working on the Python runtime team at Meta.
-They key insight that led to scalable free-threaded Python was to give up on ensuring that all threads need to agree on the exact reference count for all objects.
+The key insight that led to scalable free-threaded Python was to give up on ensuring that all threads need to agree on the exact reference count for all objects.
 Instead, split the counts between references that are from other objects "owned" by the same thread and references from objects on other threads.
 Local references can use cheap integer addition and subtraction and shared references can be deferred until a point when the interpreter can synchronize state between threads.
 
 Atomic operations alone are not enough to ensure evaluating Python bytecode is thread-safe.
 There must also be a way to ensure accessing or mutating an object's state happens reliably.
-Rather than use a _global_ lock, the solution Sam and collaborators ended up on was to use many fine-grained lock.
-In fact, one lock per python object.
+Rather than use a _global_ lock, the solution Sam and collaborators ended up on was to use many fine-grained locks.
+In fact, one lock per Python object.
 
 To make that a little more concrete: on Python 3.15, the `PyObject` struct is defined like this on the free-threaded build of CPython:
 
@@ -362,29 +358,7 @@ struct PyObject {
 
 You can see how the fields in the struct correspond to the two design decisions I introduced above: shared and local refcounts, an "owning" thread ID to identify when objects are local, and a shared reference count.
 
-The implementation of `Py_INCREF` is also correspondingly more complicated [on the free-threaded build](https://github.com/python/cpython/blob/6920036f287480f7d39d6a4005803aeac27aff3f/Include/refcount.h#L272-L284):
-
-```C
-static inline void Py_INCREF(PyObject *op)
-{
-    uint32_t local = _Py_atomic_load_uint32_relaxed(&op->ob_ref_local);
-    uint32_t new_local = local + 1;
-    if (new_local == 0) {
-        _Py_INCREF_IMMORTAL_STAT_INC();
-        // local is equal to _Py_IMMORTAL_REFCNT_LOCAL: do nothing
-        return;
-    }
-    if (_Py_IsOwnedByCurrentThread(op)) {
-        _Py_atomic_store_uint32_relaxed(&op->ob_ref_local, new_local);
-    }
-    else {
-        _Py_atomic_add_ssize(&op->ob_ref_shared, (1 << _Py_REF_SHARED_SHIFT));
-    }
-}
-```
-
-It's not so important you understand what's happening here except to see that this is a lot more complicated than simply incrementing an integer!
-Although it isn't much more complicated than that on the hot path for an unshared object, the slow paths for shared objects add a lot of visual complexity.
+`Py_INCREF` is correspondingly more complicated [on the free-threaded build](https://github.com/python/cpython/blob/6920036f287480f7d39d6a4005803aeac27aff3f/Include/refcount.h#L272-L284): for a thread-owned object the hot path is still a single non-atomic increment of `ob_ref_local`, but objects shared across threads fall back to an atomic update of `ob_ref_shared`. The details aren't essential — what matters is that a once-trivial integer increment now has to account for the new layout.
 
 So this was the design trade-off: enable multithreaded parallelism but increase the complexity of the interpreter and force extensions to explicitly support this new ABI with a new layout for `PyObject`. You can read [PEP 703](https://peps.python.org/pep-0703/) and [PEP 779](https://peps.python.org/pep-0779/) for detailed discussions of why it's worth it for CPython to choose complexity over simplicity in this case.
 
@@ -392,7 +366,7 @@ Please also refer to [Victor Stinner's post](https://vstinner.github.io/free-thr
 
 ## A new stable ABI for Python 3.15
 
-As we saw above, the `PyObject` struct has a differently layout on free-threaded Python.
+As we saw above, the `PyObject` struct has a different layout on free-threaded Python.
 That means it does not have an ABI that is compatible with the GIL-enabled build.
 In other words, it is not possible to load a compiled extension module targeting the GIL-enabled build because lots of things in the C API rely on the layout of `PyObject`.
 
@@ -400,7 +374,7 @@ Just one example that shows up in every single C extension that defines a module
 That means if `PyObject` has a different size, when CPython loads an extension and accesses data stored on the `PyModuleDef` struct to set up a module object it will access data at the wrong offset.
 Most likely, this will lead to an immediate crash.
 
-For that reason, necessitated defining a new ABI tag for the free-threaded interpreter. To make that concrete, let's try installing `cryptography` using free-threaded Python 3.14:
+That necessitated a new ABI tag for the free-threaded interpreter. To make that concrete, let's try installing `cryptography` using free-threaded Python 3.14:
 
 ```bash
 Collecting cryptography
@@ -418,15 +392,15 @@ Successfully installed cffi-2.0.0 cryptography-49.0.0 pycparser-3.0
 ```
 
 Compared with what happens on the GIL-enabled build, which I described above, there are some similarities.
-All three packages resolve to compatibile wheel builds.
-The `pycparser` wheel which has a `py3-none-any` is also compatible with the free-threaded build: pure Python code doesn't care about the layout of PyObject and doesn't need to explicitly support the free-threaded build.
+All three packages resolve to compatible wheel builds.
+The `pycparser` wheel which has a `py3-none-any` is also compatible with the free-threaded build: pure Python code doesn't care about the layout of `PyObject` and doesn't need to explicitly support the free-threaded build.
 CFFI also ships a version-specific wheel for the free-threaded build, with the ABI tag for free-threaded Python 3.14: `cp314t`.
 Wheels compiled using this ABI tag use the free-threaded layout for `PyObject`.
 
-Instead of installed an `abi3` wheel for cryptography, we installed a `cp314t` version-specific wheel.
+Instead of installing an `abi3` wheel for cryptography, we installed a `cp314t` version-specific wheel.
 It turns out that there is no equivalent to `abi3` for Python 3.14, so `cryptography` uploads a version-specific wheel.
 
-The fact that free-threaded Python 3.13 and 3.14 do no support building extensions for the limited API is a major blocker for some projects.
+The fact that free-threaded Python 3.13 and 3.14 do not support building extensions for the limited API is a major blocker for some projects.
 The stable ABI allows projects to build one wheel per architecture per release of the project.
 With the stable ABI, there is no need to keep up with annual CPython releases to support each new Python version: new Python versions are supported with no effort on the part of the project.
 
@@ -439,8 +413,8 @@ To fix this problem, the Python Steering Council tasked Python developer-in-resi
 What can be done about the fact that the free-threaded and GIL-enabled build have different `PyObject` layouts?
 How can we resolve this difference to allow extensions to target both layouts simultaneously?
 
-The key to fixing this lies in redefining structres in the Python C API to be _opaque structs_.
-An [opaque struct](https://benjamintoll.com/2022/08/31/on-opaque-data-types-in-c/#creating-a-typedef) is a programming technique where a C type is defined in such a way that where pointers to an instance cannot be dereferenced and the only valid way to interact with the type is by passing a pointers to functions rather than accessing struct fields directly.
+The key to fixing this lies in redefining structures in the Python C API to be _opaque structs_.
+An [opaque struct](https://benjamintoll.com/2022/08/31/on-opaque-data-types-in-c/#creating-a-typedef) is a C type defined so that pointers to an instance can't be dereferenced; the only valid way to interact with it is to pass those pointers to functions, rather than accessing struct fields directly.
 
 To make that concrete, what if the public definition of `PyObject` looked like this:
 
@@ -448,11 +422,11 @@ To make that concrete, what if the public definition of `PyObject` looked like t
 typedef struct _object PyObject;
 ```
 
-This relies on how the `typedef` statement works in C. It makes the opaque struct type `struct _object` to the name `PyObject`. If `Python.h` defined `PyObject` publicly like this, it would be a _compiler error_ to directly access `ob_refcnt` or any other `PyObject` field directly. This means that the precise details of how reference counts are stored can change in the CPython implementation.
+This relies on how the `typedef` statement works in C. It gives the name `PyObject` to the opaque type `struct _object`. If `Python.h` defined `PyObject` like this, it would be a _compiler error_ to access `ob_refcnt` or any other field directly. This means that the precise details of how reference counts are stored can change in the CPython implementation.
 Functions like `Py_INCREF` can account for the different `PyObject` layouts that are possible in the implementation of `Py_INCREF`, without exposing any internal implementation details in the public C API.
 
 Victor Stinner describes this effort at a high level in [a 2021 blog post](https://vstinner.github.io/c-api-opaque-structures.html). Just to go into one example: back then the only way to increment a reference count was via a `Py_INCREF` macro that directly accessed `PyObject` internals. To prepare for a future where it's possible to avoid that, Victor described how it was necessary to add a new `Py_IncRef` _function_ that does not access `PyObject` internals.
-Going through a function call may have more overhead than going through a C macro that directly accesses a struct member but doing to also allows CPython to hide implementation details.
+Going through a function call may add overhead compared with a macro that accesses a struct member directly, but it also lets CPython hide implementation details.
 
 The next pernicious issue was around how extensions want to extend Python types like `dict`, `list`, or `set`.
 In pure Python code, it's straightforward to subclass a builtin.
