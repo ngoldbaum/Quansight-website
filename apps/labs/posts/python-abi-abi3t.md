@@ -410,13 +410,73 @@ Wheels compiled using this ABI tag use the free-threaded layout for `PyObject`.
 Instead of installed an `abi3` wheel for cryptography, we installed a `cp314t` version-specific wheel.
 It turns out that there is no equivalent to `abi3` for Python 3.14, so `cryptography` uploads a version-specific wheel.
 
+The fact that free-threaded Python 3.13 and 3.14 do no support building extensions for the limited API is a major blocker for some projects.
+The stable ABI allows projects to build one wheel per architecture per release of the project.
+With the stable ABI, there is no need to keep up with annual CPython releases to support each new Python version: new Python versions are supported with no effort on the part of the project.
+
+Of course, as we saw above, the free-threaded build is fundamentally incompatible with the `abi3` stable ABI: the layout of `PyObject` is different.
+The PEP that defines the criteria for making the free-threaded build the default Python interpreter in a future release, [PEP 779](https://peps.python.org/pep-0779/), lists adding a stable ABI as one of the acceptance criteria.
+To fix this problem, the Python Steering Council tasked Python developer-in-residence [Petr Viktorin](https://github.com/encukou) to design a new stable ABI for the free-threaded build.
+
 ### The Free-Threaded Stable ABI: `abi3t`
 
-### Advice for Project Maintainers
+What can be done about the fact that the free-threaded and GIL-enabled build have different `PyObject` layouts?
+How can we resolve this difference to allow extensions to target both layouts simultaneously?
 
-The free-threaded Stable ABI, `abi3t`, gives extension maintainers a path to
-one artifact per platform for Python 3.15 and newer. Older non-free-threaded
-versions can still be covered by `abi3`:
+The key to fixing this lies in redefining structres in the Python C API to be _opaque structs_.
+An [opaque struct](https://benjamintoll.com/2022/08/31/on-opaque-data-types-in-c/#creating-a-typedef) is a programming technique where a C type is defined in such a way that where pointers to an instance cannot be dereferenced and the only valid way to interact with the type is by passing a pointers to functions rather than accessing struct fields directly.
+
+To make that concrete, what if the public definition of `PyObject` looked like this:
+
+```C
+typedef struct _object PyObject;
+```
+
+This relies on how the `typedef` statement works in C. It makes the opaque struct type `struct _object` to the name `PyObject`. If `Python.h` defined `PyObject` publicly like this, it would be a _compiler error_ to directly access `ob_refcnt` or any other `PyObject` field directly. This means that the precise details of how reference counts are stored can change in the CPython implementation.
+Functions like `Py_INCREF` can account for the different `PyObject` layouts that are possible in the implementation of `Py_INCREF`, without exposing any internal implementation details in the public C API.
+
+Victor Stinner describes this effort at a high level in [a 2021 blog post](https://vstinner.github.io/c-api-opaque-structures.html). Just to go into one example: back then the only way to increment a reference count was via a `Py_INCREF` macro that directly accessed `PyObject` internals. To prepare for a future where it's possible to avoid that, Victor described how it was necessary to add a new `Py_IncRef` _function_ that does not access `PyObject` internals.
+Going through a function call may have more overhead than going through a C macro that directly accesses a struct member but doing to also allows CPython to hide implementation details.
+
+The next pernicious issue was around how extensions want to extend Python types like `dict`, `list`, or `set`.
+In pure Python code, it's straightforward to subclass a builtin.
+In C, one generally accomplishes this by writing a new struct that extends a struct that backs a Python builtin type.
+To make that concrete, here's how one would subclass `dict`, in C, to store an extra C integer on every instance of the `dict` subclass:
+
+```C
+struct MyDictObject {
+    PyDictObject base;
+    int64_t an_extra_integer;
+}
+```
+
+Of course this is an artificial example.
+However, it's not very hard to find real-world examples of this pattern.
+For example, [in NumPy](https://github.com/numpy/numpy/blob/4357ad1a67e7d4a686c39f3720604b6440725e40/numpy/_core/include/numpy/arrayscalars.h#L140-L147).
+
+This pattern only works if the layout of e.g. `PyDictObject` is known at compile time. However, if `PyObject` is opaque, then `PyDictObject` must also be opaque, and it's no longer possible to define C subtypes by simply defining a struct with a `base` member.
+Instead, one needs to use [a new API specifically for this case](https://peps.python.org/pep-0697/), added in Python 3.12
+
+As of 2024, during the Python 3.15 development cycle, there were still a few more spots that needed updating:
+
+- [A new C API](https://peps.python.org/pep-0793/) for defining modules that avoids `PyMethodDef`, a type that extends `PyObject`.
+- [An accompanying new API](https://peps.python.org/pep-0820/) for defining Python types and modules using a common `PySlot` struct.
+
+and finally,
+
+- [Making `PyObject` opaque and defining a new stable ABI](https://peps.python.org/pep-0803/)
+
+With all these pieces, it became possible to define a C extension implementing Python functions, modules, and types without relying on the layout of `PyObject`.
+
+Since the free-threaded build does not have a GIL, to use `abi3t`, extensions should be thread-safe.
+This falls naturally out of how one selects an `abi3t` build in a C or C++ extension: by simultaneously defining the `Py_LIMITED_API` and `Py_GIL_DISALBED` macros.
+
+Because the extension doesn't depend on the layout of `PyObject` it is compatible with _both_ interpreter builds or any future interpreter build that decides to make further changes to the layout of `PyObject`. This means abi3t extensions should not rely on the GIL for thread safety and must be written in a thread-safe manner.
+
+### Advice for Project Maintainers that ship `abi3` wheels
+
+The free-threaded Stable ABI, `abi3t`, gives extension maintainers a path to one artifact per platform for Python 3.15 and newer. Older non-free-threaded versions can still be covered by `abi3`.
+If you maintain a project that currently ships `abi3` wheels, we suggest building two more wheels: a version-specific free-threaded Python 3.14 wheel and a `py315-abi3.abi3t` to target both builds on Python 3.15 and newer. This is summarized in the table below.
 
 <div className="overflow-x-auto">
   <table className="mx-auto w-auto min-w-[42rem]">
@@ -443,7 +503,7 @@ versions can still be covered by `abi3`:
       </tr>
       <tr>
         <td>3.15</td>
-        <td colSpan={2} rowSpan={3} className="align-middle text-center"><code>abi3t</code></td>
+        <td colSpan={2} rowSpan={3} className="align-middle text-center"><code>abi3.abi3t</code></td>
       </tr>
       <tr>
         <td>3.16</td>
@@ -454,3 +514,15 @@ versions can still be covered by `abi3`:
     </tbody>
   </table>
 </div>
+
+In the future, when Python 3.15 becomes your minimum supported Python version, you can go back to shipping one wheel per release.
+Temporarily building three wheels per release does add some ecosystem-wide cost with the reward of being able to adopt free-threaded Python.
+
+Currently, `abi3t` support in build tools and bindings generators is mixed at time of writing in June 2026, as Python 3.15 is still in a pre-release stage.
+As the Python 3.15 final release approaches, expect to see build backend support improved.
+[PyO3](https://pyo3.rs/v0.29.0/features.html#abi3t) and [Maturin](https://www.maturin.rs/bindings.html?highlight=abi3t#py_limited_apiabi3) fully support Python 3.15, so most Rust extensions should be ready for testing.
+[Scikit-build-core](https://scikit-build-core.readthedocs.io/en/latest/configuration/index.html#customizing-the-output-wheel) and [CMake](https://cmake.org/cmake/help/latest/module/FindPython3.html) also support abi3t.
+Cython supports abi3t via [an experimental branch](https://github.com/cython/cython/issues/7399).
+Setuptools support will be added once [PR #5193](https://github.com/pypa/setuptools/pull/5193) is merged and appears in a release.
+Meson-python support also lives in [an open PR](https://github.com/mesonbuild/meson-python/pull/856) currently.
+Installing an abi3t wheel should be fully supported across all installers, including both `pip` and `uv`.
