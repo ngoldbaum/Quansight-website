@@ -139,7 +139,7 @@ The diagram below illustrates the distinction between the CPython C API and the 
  <figure style={{ textAlign: 'center' }}>
    <img
      src="/posts/python-abi-abi3t/api_vs_abi.png"
-     alt="A two-panel hand-drawn diagram contrasting the API and the ABI. The left panel, in violet and marked with a small C-source-file icon, is titled "API — Application Programming Interface" and lists three things the API covers, each with a code example: function signatures (PyObject *PyDict_GetItemRef(…)); macros, typedefs, and inline functions (Py_INCREF(op)); and the header you compile against (#include "Python.h"). The right panel, in blue and marked with a small computer-chip icon, is titled "ABI — Application Binary Interface" and lists three things the ABI covers: exported symbol names (PyDict_GetItemRef); struct sizes and field offsets, illustrated by a memory-layout diagram of PyObject as two 8-byte fields — ob_refcnt at byte offset 0 and ob_type at offset 8, 16 bytes total; and platform-specific details, illustrated by a matrix of operating systems (rows: Windows, macOS, and Linux) against CPU architectures (columns: x86-64, arm64, and ppc64le), with a green dot marking each supported build — x86-64 and arm64 for all three operating systems, and ppc64le for Linux only."
+     alt='A two-panel hand-drawn diagram contrasting the API and the ABI. The left panel, in violet and marked with a small C-source-file icon, is titled "API — Application Programming Interface" and lists three things the API covers, each with a code example: function signatures (PyObject *PyDict_GetItemRef(…)); macros, typedefs, and inline functions (Py_INCREF(op)); and the header you compile against (#include "Python.h"). The right panel, in blue and marked with a small computer-chip icon, is titled "ABI — Application Binary Interface" and lists three things the ABI covers: exported symbol names (PyDict_GetItemRef); struct sizes and field offsets, illustrated by a memory-layout diagram of PyObject as two 8-byte fields — ob_refcnt at byte offset 0 and ob_type at offset 8, 16 bytes total; and platform-specific details, illustrated by a matrix of operating systems (rows: Windows, macOS, and Linux) against CPU architectures (columns: x86-64, arm64, and ppc64le), with a green dot marking each supported build — x86-64 and arm64 for all three operating systems, and ppc64le for Linux only.'
      style={{position:'relative',left:'12%',width:'70%'}}
    />
  </figure>
@@ -351,7 +351,7 @@ To make that a little more concrete: on Python 3.15, the `PyObject` struct is de
 
 ```C
 struct PyObject {
-    uinptr_t ob_tid;           // id of owning thread
+    uintptr_t ob_tid;          // id of owning thread
     uint16_t ob_flags;
     PyMutex ob_mutex;          // per-object lock
     uint8_t ob_gc_bits;
@@ -397,7 +397,7 @@ That means it does not have an ABI that is compatible with the GIL-enabled build
 In other words, it is not possible to load a compiled extension module targeting the GIL-enabled build because lots of things in the C API rely on the layout of `PyObject`.
 
 Just one example that shows up in every single C extension that defines a module: the [`PyModuleDef` struct](https://docs.python.org/3/c-api/module.html#c.PyModuleDef). For convenience and historical reasons, this struct _extends_ the `PyObject` struct.
-That means if `PyObject` has a different size, when CPython loads an extension and accesses data stored on the `PyMethodDef` struct to set up a module object it will access data at the wrong offset.
+That means if `PyObject` has a different size, when CPython loads an extension and accesses data stored on the `PyModuleDef` struct to set up a module object it will access data at the wrong offset.
 Most likely, this will lead to an immediate crash.
 
 For that reason, necessitated defining a new ABI tag for the free-threaded interpreter. To make that concrete, let's try installing `cryptography` using free-threaded Python 3.14:
@@ -485,7 +485,7 @@ and finally,
 With all these pieces, it became possible to define a C extension implementing Python functions, modules, and types without relying on the layout of `PyObject`.
 
 Since the free-threaded build does not have a GIL, to use `abi3t`, extensions should be thread-safe.
-This falls naturally out of how one selects an `abi3t` build in a C or C++ extension: by simultaneously defining the `Py_LIMITED_API` and `Py_GIL_DISALBED` macros.
+This falls naturally out of how one selects an `abi3t` build in a C or C++ extension: by simultaneously defining the `Py_LIMITED_API` and `Py_GIL_DISABLED` macros.
 
 Because the extension doesn't depend on the layout of `PyObject` it is compatible with _both_ interpreter builds or any future interpreter build that decides to make further changes to the layout of `PyObject`. This means abi3t extensions should not rely on the GIL for thread safety and must be written in a thread-safe manner.
 
