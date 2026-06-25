@@ -161,7 +161,7 @@ The `none` ABI tag used by `pycparser` indicates that the wheel doesn't target a
 The `cp314` tag used by `cffi` indicates that the wheel supports Python 3.14 exactly and no other minor Python version.
 Finally, the `abi3` tag used by `cryptography` indicates that this wheel targets the [Python Stable ABI subset](https://docs.python.org/3/c-api/stable.html#stable-application-binary-interface), and is forward-compatible with all future Python 3 versions that support the `abi3` ABI.
 
-It's worth emphasizing that `abi3` wheels are _not_ installable on [the free-threaded build](https://py-free-threading.github.io) of CPython. We'll explain more below what the `cp3XY` and `abi3` tags means and see why the free-threaded build threw a monkey wrench into this scheme.
+It's worth emphasizing that `abi3` wheels are _not_ installable on [the free-threaded build](https://py-free-threading.github.io) of CPython. We'll explain more below what the `cp3XY` and `abi3` tags mean and see why the free-threaded build threw a monkey wrench into this scheme.
 
 ## The Layers of the CPython C API
 
@@ -353,7 +353,7 @@ If the reference count field, `ob_refcnt`, goes to zero then the object is deall
 In CPython, the object is deallocated immediately.
 Python also exposes access to OS-level threads via the `threading` module.
 
-These two facts have big implications for whether it is safe to use Python with threads. In principle, without a global lock preventing it, Python could could access the same Python object _simultaneously_. If, for some reason, the reference count happens to go to zero and the object is deallocated, the other thread might see free'd memory and probably crash.
+These two facts have big implications for whether it is safe to use Python with threads. In principle, without a global lock preventing it, Python could access the same Python object _simultaneously_. If, for some reason, the reference count happens to go to zero and the object is deallocated, the other thread might see free'd memory and probably crash.
 
 So you have a situation where a C struct has a signed integer that may be incremented or decremented at arbitrary times — even simultaneously — from any arbitrary number of threads.
 This is a classic case of a problem that is susceptible to pitfalls of concurrency: [races](https://en.wikipedia.org/wiki/Race_condition).
@@ -514,7 +514,7 @@ However, it's not very hard to find real-world examples of this pattern.
 For example, [in NumPy](https://github.com/numpy/numpy/blob/4357ad1a67e7d4a686c39f3720604b6440725e40/numpy/_core/include/numpy/arrayscalars.h#L140-L147).
 
 This pattern only works if the layout of e.g. `PyDictObject` is known at compile time. However, if `PyObject` is opaque, then `PyDictObject` must also be opaque, and it's no longer possible to define C subtypes by simply defining a struct with a `base` member.
-Instead, you need to use [a new API specifically for this case](https://peps.python.org/pep-0697/), added in Python 3.12
+Instead, you need to use [a new API specifically for this case](https://peps.python.org/pep-0697/), added in Python 3.12.
 
 As of 2025, during the Python 3.15 development cycle, there were still a few more spots that needed updating:
 
