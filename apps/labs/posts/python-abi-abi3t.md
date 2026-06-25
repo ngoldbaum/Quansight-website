@@ -61,15 +61,13 @@ It is often possible to achieve order-of-magnitude or even several order-of-magn
 The [Cython](https://cython.readthedocs.io/en/latest/) programming language takes advantage of this by (among other things) compiling Python code to C source that, once compiled and linked into a larger program, behaves like the Python it was generated from.
 This translation isn't always perfect, but it is serviceable enough to back the implementations of popular libraries like [Pandas](https://pandas.pydata.org/), [scikit-image](https://scikit-image.org/), or [scikit-learn](https://scikit-learn.org/).
 
+### The distinction between a C API and ABI
+
 What isn't the C API?
 The C API is purely a construct of the C programming language.
 Code written in languages that aren't C can call into a C API, but only by using the platform-specific and architecture-specific calling conventions used by all code that executes directly on the CPU, abstracting away functionality that is not expressible in C.
 This is when it becomes important to think about the ABI.
 When C API calls are compiled, the resulting machine code follows a concrete set of ABI conventions. Other languages like C++ and Rust use those same conventions to interact with the Python interpreter, even though CPython exposes no C++ or Rust API.
-
-## The Python ABI
-
-What exactly is an application binary interface? It helps to split it into two layers: the _platform ABI_ (platform-specific details) and the _Python ABI_ (Python-specific details), which I'll discuss in turn.
 
 The diagram below illustrates the distinction between the CPython C API and the Python ABI.
 
@@ -80,6 +78,18 @@ The diagram below illustrates the distinction between the CPython C API and the 
      style={{position:'relative'}}
    />
  </figure>
+
+A C API includes all of the details that are expressed in a C header, including full function signatures, macros, typedefs, and inline functions. It also includes the header itself.
+
+The ABI is defined by the _symbol names_ and how those symbols are translated into machine code. For a function, how the name maps to the address of the function in the binary, the number of arguments, the return type, and the types of the arguments all go into the contract that determines how a compiler generates binaries for a target platform.
+The structs and the layouts of the structs exposed in a C API are also part of the ABI, because it determines how a compiler generates code to call a function that takes a struct as an argument or accesses a struct field.
+The ABI is also platform-dependent: each CPU and OS has different conventions for how to structure binaries and execute machine code.
+
+We'll go into more detail on how this applies to the ABI that Python extensions use below.
+
+## The Python ABI
+
+When talking about a concrete Python extension module that targets a particular CPU and OS, it helps to conceptually organize the ABI definition into two layers: the _platform ABI_ (platform-specific details) and the _Python ABI_ (Python-specific details), which I'll discuss in turn.
 
 We'll go into more detail to explain how the ABI is distinct but inter-related with the C API
 
