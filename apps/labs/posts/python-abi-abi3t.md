@@ -15,20 +15,22 @@ hero:
 # What Every Python Developer Should Know About the CPython ABI
 
 The CPython Application Binary Interface (ABI) backs Python's main superpower: the ability to easily call into native C, C++, Rust, or Fortran code and for that code to call back into the interpreter and update the state of Python objects.
-But what exactly is an ABI? How does it differ from an Application Programming Interface (API)?
-Why did I begin this post's title with "What _Every_ Python Developer Should Know"?
+
+What exactly is an ABI? How does it differ from an Application Programming Interface (API)?
+Why is this post's title with "What _Every_ Python Developer Should Know about
+the CPython ABI"?
 Aren't these low-level details the kind of thing we can ignore most of the time in a high-level language like Python?
 
 In this post I hope to answer all these questions and build up your intuition about these topics.
 I also hope you'll learn some useful information about how Python projects that include native extensions are distributed, what the ABI compatibility tags that show up in wheel filenames mean, and how projects can choose to target different Python ABIs depending on the tradeoffs they want to make.
 By the end, you should be able to look at any wheel filename and know which Python interpreters it will install on — and why.
 
-## The CPython interpreter runtime
+## The CPython C API and the Python ABI
 
 The Python interpreter does a bit of a magic trick when you execute a script
-like in the cartoon below. The `np.array` function can be _called_ by Python
-code, but it turns out this function is [implemented in
-C](https://github.com/numpy/numpy/blob/f8c34f2927ba812a3efe9bc978d84aa47f27bff7/numpy/_core/src/multiarray/multiarraymodule.c#L1720). The interpreter runtime handles this transparently.
+like in the cartoon below. The `np.array` function can be called by Python
+code, but it turns out this function is _implemented_ [_in
+C_](https://github.com/numpy/numpy/blob/f8c34f2927ba812a3efe9bc978d84aa47f27bff7/numpy/_core/src/multiarray/multiarraymodule.c#L1720). The CPython interpreter handles this transparently.
 
  <figure style={{ textAlign: 'center' }}>
    <img
@@ -42,6 +44,7 @@ How does it achieve this trick?
 Via the [CPython C API](https://docs.python.org/3/c-api/index.html) and the corresponding [Python ABI](https://docs.python.org/3/c-api/stable.html#c-api-stability).
 Of course that doesn't really explain what those terms mean.
 It certainly doesn't help that these two related, intertwined concepts are named with such similar-sounding acronyms.
+I will attempt to clarify that in the rest of this post.
 
 ### The CPython C API
 
@@ -50,17 +53,17 @@ It began as a research project and was written to be easy to extend with new fun
 To access the internals of the interpreter, one needed only to `#include "Python.h"` in a C program, which gave rich access to the internal state of the interpreter and hooks to call into the interpreter via the CPython C API, the very same C API that the core interpreter implementation is based on.
 
 What is the C API exactly?
-It's precisely the set of C macros, typedefs, functions, and structs exposed by the header that defines the C interface: `Python.h`.
-This constitutes an enormous number of symbols.
+It's the set of C macros, typedefs, functions, and structs exposed by the header that defines the C interface: `Python.h`.
 It's possible to write C code that replicates the behavior of any Python script, at the cost of compilation, verbosity, and exposure to the pitfalls of the C programming language.
 The reward is raw execution speed.
+
 It is often possible to achieve order-of-magnitude or even several order-of-magnitude speedups by translating Python code to a compiled language that can call into the C API.
 The [Cython](https://cython.readthedocs.io/en/latest/) programming language takes advantage of this by (among other things) compiling Python code to C source that, once compiled and linked into a larger program, behaves like the Python it was generated from.
 This translation isn't always perfect, but it is serviceable enough to back the implementations of popular libraries like [Pandas](https://pandas.pydata.org/), [scikit-image](https://scikit-image.org/), or [scikit-learn](https://scikit-learn.org/).
 
 What isn't the C API?
 The C API is purely a construct of the C programming language.
-Code written in languages that aren't C can call into a C API, but only by using the conventions of the C programming language and abstracting away functionality that is not expressible in C.
+Code written in languages that aren't C can call into a C API, but only by using the platform-specific and architecture-specific calling conventions used by all code that executes directly on the CPU, abstracting away functionality that is not expressible in C.
 This is when it becomes important to think about the ABI.
 When C API calls are compiled, the resulting machine code follows a concrete set of ABI conventions. Other languages like C++ and Rust use those same conventions to interact with the Python interpreter, even though CPython exposes no C++ or Rust API.
 
@@ -74,7 +77,7 @@ The diagram below illustrates the distinction between the CPython C API and the 
    <img
      src="/posts/python-abi-abi3t/api_vs_abi.png"
      alt='A two-panel hand-drawn diagram contrasting the API and the ABI. The left panel, in violet and marked with a small C-source-file icon, is titled "API — Application Programming Interface" and lists three things the API covers, each with a code example: function signatures (PyObject *PyDict_GetItemRef(…)); macros, typedefs, and inline functions (Py_INCREF(op)); and the header you compile against (#include "Python.h"). The right panel, in blue and marked with a small computer-chip icon, is titled "ABI — Application Binary Interface" and lists three things the ABI covers: exported symbol names (PyDict_GetItemRef); struct sizes and field offsets, illustrated by a memory-layout diagram of PyObject as two 8-byte fields — ob_refcnt at byte offset 0 and ob_type at offset 8, 16 bytes total; and platform-specific details, illustrated by a matrix of operating systems (rows: Windows, macOS, and Linux) against CPU architectures (columns: x86-64, arm64, and ppc64le), with a green dot marking each supported build — x86-64 and arm64 for all three operating systems, and ppc64le for Linux only.'
-     style={{position:'relative',left:'12%'}}
+     style={{position:'relative'}}
    />
  </figure>
 
