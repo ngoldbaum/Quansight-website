@@ -81,17 +81,24 @@ The diagram below illustrates the distinction between the CPython C API and the 
 
 A C API includes all of the details that are expressed in a C header, including full function signatures, macros, typedefs, and inline functions. It also includes the header itself.
 
-The ABI is defined by the _symbol names_ and how those symbols are translated into machine code. For a function, how the name maps to the address of the function in the binary, the number of arguments, the return type, and the types of the arguments all go into the contract that determines how a compiler generates binaries for a target platform.
-The structs and the layouts of the structs exposed in a C API are also part of the ABI, because it determines how a compiler generates code to call a function that takes a struct as an argument or accesses a struct field.
-The ABI is also platform-dependent: each CPU and OS has different conventions for how to structure binaries and execute machine code.
+The Python ABI includes all of the _symbols_ — the variables and function declarations — exposed in `Python.h`.
+A symbol in the ABI corresponding to a C API function holds the name of the function, the number of arguments, the types of the arguments, and the type of the value returned by the function, if any.
+Many variables exposed in the C headers are C structs, so the layout of these structs is also part of the ABI.
+The layout of the struct is the order and types of all of the members of the struct.
 
-We'll go into more detail on how this applies to the ABI that Python extensions use below.
+Notably, the Python ABI does _not_ include things that _are_ in the C API.
+This includes all items that are particular to the conventions of the C language or the C preprocessor like [macros](<https://www.cs.yale.edu/homes/aspnes/pinewiki/C(2f)Macros.html>), [typedefs](https://en.wikipedia.org/wiki/Typedef), and [inline functions](<https://en.wikipedia.org/wiki/Inline_(C_and_C%2B%2B)>).
+The Python ABI also doesn't depend on the names of the function arguments: all it cares about is how to store and lay out the instances of different types exposed in a C API in memory.
+
+This can be a little confusing when working with the CPython C API and thinking about the difference between the ABI and API because many names in the C API are implemented as macros but logically behave as functions.
+Despite that, because of how they are implemented, these items do not appear in the Python ABI.
+This means that programming languages that cannot compile C syntax, like Rust, cannot use any C API items that are defined as C macros or inline functions.
+Instead, Rust extensions rely on Rust re-implementations of macros and static inline functions exposed by the C API based on items that _are_ in the Python ABI.
+C++ _is_ compatible with the C preprocessor, so you can use typedefs, macros, and inline functions exposed in the CPython C API in C++ extensions.
 
 ## The Python ABI
 
 When talking about a concrete Python extension module that targets a particular CPU and OS, it helps to conceptually organize the ABI definition into two layers: the _platform ABI_ (platform-specific details) and the _Python ABI_ (Python-specific details), which I'll discuss in turn.
-
-We'll go into more detail to explain how the ABI is distinct but inter-related with the C API
 
 ### What is a platform ABI?
 
@@ -147,24 +154,7 @@ The `none` ABI tag used by `pycparser` indicates that the wheel doesn't target a
 The `cp314` tag used by `cffi` indicates that the wheel supports Python 3.14 exactly and no other minor Python version.
 Finally, the `abi3` tag used by `cryptography` indicates that this wheel targets the [Python Stable ABI subset](https://docs.python.org/3/c-api/stable.html#stable-application-binary-interface), and is forward-compatible with all future Python 3 versions that support the `abi3` ABI.
 
-> **Heads up:** `abi3` wheels are _not_ installable on [the free-threaded build](https://py-free-threading.github.io) of CPython. We'll see below why, and how the new `abi3t` ABI in Python 3.15 fixes this.
-
-### What is the Python ABI?
-
-The Python ABI includes all of the symbols — the variables and function declarations — exposed in `Python.h`.
-A symbol in the ABI corresponding to a C API function holds the name of the function, the number of arguments, the types of the arguments, and the type of the value returned by the function, if any.
-Many variables exposed in the C headers are C structs, so the layout of these structs is also part of the ABI.
-The layout of the struct is the order and types of all of the members of the struct.
-
-Notably, the Python ABI does _not_ include things that _are_ in the C API.
-This includes all items that are particular to the conventions of the C language or the C preprocessor like [macros](<https://www.cs.yale.edu/homes/aspnes/pinewiki/C(2f)Macros.html>), [typedefs](https://en.wikipedia.org/wiki/Typedef), and [inline functions](<https://en.wikipedia.org/wiki/Inline_(C_and_C%2B%2B)>).
-The Python ABI also doesn't depend on the names of the function arguments: all it cares about is how to store and lay out the instances of different types exposed in a C API in memory.
-
-This can be a little confusing when working with the CPython C API and thinking about the difference between the ABI and API because many names in the C API are implemented as macros but logically behave as functions.
-Despite that, because of how they are implemented, these items do not appear in the Python ABI.
-This means that programming languages that cannot compile C syntax, like Rust, cannot use any C API items that are defined as C macros or inline functions.
-Instead, Rust extensions rely on Rust re-implementations of macros and static inline functions exposed by the C API based on items that _are_ in the Python ABI.
-C++ _is_ compatible with the C preprocessor, so you can use typedefs, macros, and inline functions exposed in the CPython C API in C++ extensions.
+It's worth emphasizing that `abi3` wheels are _not_ installable on [the free-threaded build](https://py-free-threading.github.io) of CPython. We'll see below why, and how the new `abi3t` ABI in Python 3.15 fixes this.
 
 ### The PyObject struct
 
