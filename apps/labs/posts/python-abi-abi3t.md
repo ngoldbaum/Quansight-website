@@ -50,7 +50,7 @@ I will attempt to clarify that in the rest of this post.
 
 [CPython](https://github.com/python/cpython), as the name suggests, is implemented in the C programming language.
 It began as a research project and was written to be easy to extend with new functionality.
-To access the internals of the interpreter, one needed only to `#include "Python.h"` in a C program, which gave rich access to the internal state of the interpreter and hooks to call into the interpreter via the CPython C API, the very same C API that the core interpreter implementation is based on.
+To access the internals of the interpreter, you need only to `#include "Python.h"` in a C program, which gave rich access to the internal state of the interpreter and hooks to call into the interpreter via the CPython C API, the very same C API that the core interpreter implementation is based on.
 
 What is the C API exactly?
 It's the set of C macros, typedefs, functions, and structs exposed by the header that defines the C interface: `Python.h`.
@@ -61,7 +61,7 @@ It is often possible to achieve order-of-magnitude or even several order-of-magn
 The [Cython](https://cython.readthedocs.io/en/latest/) programming language takes advantage of this by (among other things) compiling Python code to C source that, once compiled and linked into a larger program, behaves like the Python it was generated from.
 This translation isn't always perfect, but it is serviceable enough to back the implementations of popular libraries like [Pandas](https://pandas.pydata.org/), [scikit-image](https://scikit-image.org/), or [scikit-learn](https://scikit-learn.org/).
 
-### The distinction between a C API and ABI
+### The distinction between a C API and an ABI
 
 What isn't the C API?
 The C API is purely a construct of the C programming language.
@@ -89,7 +89,7 @@ This includes all items that are particular to the conventions of the C language
 The Python ABI also doesn't depend on the names of the function arguments: all it cares about is how to store and lay out the instances of different types exposed in a C API in memory.
 
 This can be a little confusing when working with the CPython C API and thinking about the difference between the ABI and API because many names in the C API are implemented as macros but logically behave as functions.
-Despite that, because of how they are implemented, these items do not appear in the Python ABI.
+Because they're implemented as macros, these items do not appear in the Python ABI.
 This means that programming languages that cannot compile C syntax, like Rust, cannot use any C API items that are defined as C macros or inline functions.
 Instead, Rust extensions rely on Rust re-implementations of macros and static inline functions exposed by the C API based on items that _are_ in the Python ABI.
 C++ _is_ compatible with the C preprocessor, so you can use typedefs, macros, and inline functions exposed in the CPython C API in C++ extensions.
@@ -161,7 +161,7 @@ The `none` ABI tag used by `pycparser` indicates that the wheel doesn't target a
 The `cp314` tag used by `cffi` indicates that the wheel supports Python 3.14 exactly and no other minor Python version.
 Finally, the `abi3` tag used by `cryptography` indicates that this wheel targets the [Python Stable ABI subset](https://docs.python.org/3/c-api/stable.html#stable-application-binary-interface), and is forward-compatible with all future Python 3 versions that support the `abi3` ABI.
 
-It's worth emphasizing that `abi3` wheels are _not_ installable on [the free-threaded build](https://py-free-threading.github.io) of CPython. We'll see below why, and how the new `abi3t` ABI in Python 3.15 fixes this.
+It's worth emphasizing that `abi3` wheels are _not_ installable on [the free-threaded build](https://py-free-threading.github.io) of CPython. We'll explain more below what the `cp3XY` and `abi3` tags means and see why the free-threaded build threw a monkey wrench into this scheme.
 
 ## The Layers of the CPython C API
 
@@ -212,7 +212,7 @@ These items serve a real purpose, but the CPython developers are not ready to co
 Usually this is because unstable API items rely on or expose interpreter implementation details and it's not yet clear if the resulting behavior should be enshrined in the "official" C API.
 The unstable API is most useful for projects or organizations who can follow development of the CPython C API and are OK with occasional breakage when warranted.
 
-### The Version-Specific API
+### The Version-Specific C API
 
 The next innermost layer is the Python version-specific C API and includes all symbols that follow the CPython C API [stability policy](https://docs.python.org/3/c-api/stable.html#c-api-stability), as first laid out in [PEP 387](https://peps.python.org/pep-0387/) back in 2009.
 While public symbols in the CPython C API can be removed following a deprecation period or to fix a serious defect, this only happens after a period of public discussion and consideration of the community impact. Critically, CPython has a policy not to add or remove items in the version-specific API from the first beta release of a Python minor version onward.
@@ -229,7 +229,7 @@ The CPython project [commits](https://docs.python.org/3/c-api/stable.html#stable
 C or C++ extensions can opt into compiling for this mode by defining the `Py_LIMITED_API` macro to a hex constant that corresponds to a particular CPython version.
 
 A somewhat confusing point that is often glossed over is that the limited C API _also_ changes from Python version to Python version.
-One can build extensions that target _either one_ of, say, the Python 3.13 version-specific API or the limited API.
+You can build extensions that target _either one_ of, say, the Python 3.13 version-specific API or the limited API.
 It's also possible to target limited API versions older than the Python version used to build an extension.
 An extension or wheel build targeting, say, the Python 3.10 limited API can be imported on Python 3.10 and _any newer Python release_.
 
@@ -267,7 +267,7 @@ Many projects do not have the resources to track CPython like that and instead t
 ### The Stable ABI: `abi3`
 
 The guarantee that items in the limited C API will never go away enables a different kind of _forward-compatible_ ABI.
-One can build binaries using the limited API as it was defined in, say, Python 3.10.
+You can build binaries using the limited API as it was defined in, say, Python 3.10.
 Because of the stability guarantees provided by the stable subset of the CPython ABI, you can rely on the fact future Python versions will be able to import your binary: all the symbols it needs from the CPython ABI should still be there.
 
 There is one major problem with this scheme: `abi3` as it was originally defined shared a detail with the version-specific ABI: the layout of the `PyObject` struct is exposed.
@@ -353,7 +353,7 @@ If the reference count field, `ob_refcnt`, goes to zero then the object is deall
 In CPython, the object is deallocated immediately.
 Python also exposes access to OS-level threads via the `threading` module.
 
-Taken together these two facts have big implications for whether it is safe to use Python with threads. In principle, without a global lock preventing it, Python could could access the same Python object _simultaneously_. If, for some reason, the reference count happens to go to zero and the object is deallocated, the other thread might see free'd memory and probably crash.
+These two facts have big implications for whether it is safe to use Python with threads. In principle, without a global lock preventing it, Python could could access the same Python object _simultaneously_. If, for some reason, the reference count happens to go to zero and the object is deallocated, the other thread might see free'd memory and probably crash.
 
 So you have a situation where a C struct has a signed integer that may be incremented or decremented at arbitrary times — even simultaneously — from any arbitrary number of threads.
 This is a classic case of a problem that is susceptible to pitfalls of concurrency: [races](https://en.wikipedia.org/wiki/Race_condition).
@@ -361,11 +361,11 @@ This particular case, where the race to increment or decrement the integer happe
 In the specification of the C, C++, and Rust languages, the result of what happens after these sorts of races is [undefined behavior](https://www.hboehm.info/c++mm/why_undef.html).
 Undefined behavior in a native application should be avoided at all costs because compilers are free to generate code that is not at all what a programmer intended if it is triggered in a program.
 
-This problem was realized quite early on in the development of CPython.
+This problem was recognized quite early on in the development of CPython.
 To fix it, the language grew the global interpreter lock.
 In order to interact with Python objects, you need to acquire a global [mutex](<https://en.wikipedia.org/wiki/Lock_(computer_science)>) and release it as soon as you are done using the Python objects or the CPython interpreter runtime.
 
-Since incrementing and decrementing reference counts should only happen with the GIL mutex held, it's therefore perfectly safe to arbitrarily share Python objects: one can be confident that only one thread at a time can actually see or mutate the state of the object.
+Since incrementing and decrementing reference counts should only happen with the GIL mutex held, it's therefore perfectly safe to arbitrarily share Python objects: you can be confident that only one thread at a time can actually see or mutate the state of the object.
 
 There is a big downside to this design decision: the GIL means it is impossible to actually use more than one CPU core to run Python code.
 In particular: only one core can run code that holds the GIL.
@@ -404,7 +404,7 @@ Local references can use cheap integer addition and subtraction and shared refer
 
 Atomic operations alone are not enough to ensure evaluating Python bytecode is thread-safe.
 There must also be a way to ensure accessing or mutating an object's state happens reliably.
-Rather than use a _global_ lock, the solution Sam and collaborators ended up on was to use many fine-grained locks.
+Rather than use a _global_ lock, the solution Sam and collaborators settled on was to use many fine-grained locks.
 In fact, one lock per Python object.
 
 To make that a little more concrete: on Python 3.15, the `PyObject` struct is defined like this on the free-threaded build of CPython:
@@ -499,8 +499,8 @@ Going through a function call may add overhead compared with a macro that access
 
 The next pernicious issue was around how extensions want to extend Python types like `dict`, `list`, or `set`.
 In pure Python code, it's straightforward to subclass a builtin.
-In C, one generally accomplishes this by writing a new struct that extends a struct that backs a Python builtin type.
-To make that concrete, here's how one would subclass `dict`, in C, to store an extra C integer on every instance of the `dict` subclass:
+In C, you generally accomplish this by writing a new struct that extends a struct that backs a Python builtin type.
+To make that concrete, here's how you would subclass `dict`, in C, to store an extra C integer on every instance of the `dict` subclass:
 
 ```c
 struct MyDictObject {
@@ -514,15 +514,12 @@ However, it's not very hard to find real-world examples of this pattern.
 For example, [in NumPy](https://github.com/numpy/numpy/blob/4357ad1a67e7d4a686c39f3720604b6440725e40/numpy/_core/include/numpy/arrayscalars.h#L140-L147).
 
 This pattern only works if the layout of e.g. `PyDictObject` is known at compile time. However, if `PyObject` is opaque, then `PyDictObject` must also be opaque, and it's no longer possible to define C subtypes by simply defining a struct with a `base` member.
-Instead, one needs to use [a new API specifically for this case](https://peps.python.org/pep-0697/), added in Python 3.12
+Instead, you need to use [a new API specifically for this case](https://peps.python.org/pep-0697/), added in Python 3.12
 
 As of 2025, during the Python 3.15 development cycle, there were still a few more spots that needed updating:
 
 - [A new C API](https://peps.python.org/pep-0793/) for defining modules that avoids `PyModuleDef`, a type that extends `PyObject`.
 - [An accompanying new API](https://peps.python.org/pep-0820/) for defining Python types and modules using a common `PySlot` struct.
-
-and finally,
-
 - [Making `PyObject` opaque and defining a new stable ABI](https://peps.python.org/pep-0803/)
 
 With all these pieces, it became possible to define a C extension implementing Python functions, modules, and types without relying on the layout of `PyObject`.
