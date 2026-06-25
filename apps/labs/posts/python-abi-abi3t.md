@@ -274,8 +274,10 @@ There is one major problem with this scheme: `abi3` as it was originally defined
 
 Until the advent of the free-threaded interpreter, projects had a choice of supporting a build matrix like the following:
 
+<style dangerouslySetInnerHTML={{ __html: ".abi-grid{border-collapse:collapse}.abi-grid th,.abi-grid td{border:1px solid #374151;padding:8px 16px}" }} />
+
 <div className="overflow-x-auto">
-  <table className="mx-auto w-auto min-w-[42rem]">
+  <table className="abi-grid mx-auto w-auto min-w-[42rem]">
     <thead>
       <tr>
         <th>CPython version</th>
@@ -286,22 +288,19 @@ Until the advent of the free-threaded interpreter, projects had a choice of supp
     <tbody>
       <tr>
         <td>3.9</td>
-        <td><code>cp39-abi3</code></td>
+        <td rowSpan={5} className="align-middle text-center"><code>cp39-abi3</code></td>
         <td><code>cp39</code></td>
       </tr>
       <tr>
         <td>3.10</td>
-        <td>&mdash;</td>
         <td><code>cp310</code></td>
       </tr>
       <tr>
         <td>3.11</td>
-        <td>&mdash;</td>
         <td><code>cp311</code></td>
       </tr>
       <tr>
         <td>3.12</td>
-        <td>&mdash;</td>
         <td><code>cp312</code></td>
       </tr>
     </tbody>
@@ -534,7 +533,7 @@ The free-threaded Stable ABI, `abi3t`, gives extension maintainers a path to one
 If you maintain a project that currently ships `abi3` wheels, we suggest building two more wheels: a version-specific free-threaded Python 3.14 wheel and a `py315-abi3.abi3t` to target both builds on Python 3.15 and newer. This is summarized in the table below.
 
 <div className="overflow-x-auto">
-  <table className="mx-auto w-auto min-w-[42rem]">
+  <table className="abi-grid mx-auto w-auto min-w-[42rem]">
     <thead>
       <tr>
         <th>CPython version</th>
@@ -545,7 +544,7 @@ If you maintain a project that currently ships `abi3` wheels, we suggest buildin
     <tbody>
       <tr>
         <td>3.12</td>
-        <td rowSpan={3} className="align-middle text-center"><code>abi3</code></td>
+        <td rowSpan={3} className="align-middle text-center"><code>cp312-abi3</code></td>
         <td>&mdash;</td>
       </tr>
       <tr>
@@ -558,7 +557,7 @@ If you maintain a project that currently ships `abi3` wheels, we suggest buildin
       </tr>
       <tr>
         <td>3.15</td>
-        <td colSpan={2} rowSpan={3} className="align-middle text-center"><code>abi3.abi3t</code></td>
+        <td colSpan={2} rowSpan={3} className="align-middle text-center"><code>cp315-abi3.abi3t</code></td>
       </tr>
       <tr>
         <td>3.16</td>
