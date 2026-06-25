@@ -36,7 +36,7 @@ C_](https://github.com/numpy/numpy/blob/f8c34f2927ba812a3efe9bc978d84aa47f27bff7
    <img
      src="/posts/python-abi-abi3t/cpython_runtime_diagram.png"
      alt="A cartoon showing a Python script with NumPy code calling into a cloud representing the CPython interpreter runtime which in turn calls into a NumPy C extension."
-     style={{position:'relative',left:'12%',width:'70%'}}
+     style={{position:'relative'}}
    />
  </figure>
 
@@ -199,7 +199,7 @@ This is managed by breaking up the "full" C API surface used by the interpreter 
    <img
      src="/posts/python-abi-abi3t/cpython_api_layers.png"
      alt='Five nested ellipses illustrating the layering of the Python C API. The outermost ellipse is gray and labeled "Internal API, exposed only if `Py_BUILD_CORE` is defined". The next enclosed ellipse is red and outlined with a dashed line defined in the legend to mean "Usable with `#include "Python.h"`". The red ellipse is labeled "Private API `_Py*` prefix". The next enclosed ellipse is yellow and is labeled "Unstable API `PyUnstable_*` prefix". The next enclosed ellipse is blue and labeled "Version-specific API". The next enclosed ellipse is green with a dark shaded outline the legend defines to mean "Usable if `Py_LIMITED_API` is defined" and is labeled "Limited API".'
-     style={{position:'relative',left:'12%',width:'70%'}}
+     style={{position:'relative'}}
    />
  </figure>
 
