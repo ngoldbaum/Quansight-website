@@ -79,12 +79,12 @@ The diagram below illustrates the distinction between the CPython C API and the 
 
 A C API includes all of the details that are expressed in a C header, including full function signatures, macros, typedefs, and inline functions. It also includes the header itself.
 
-The Python ABI includes all of the _symbols_ — the variables and function declarations — exposed in `Python.h`.
+A C ABI includes all of the _symbols_ — the variables and function declarations — exposed in a header like `Python.h`.
 A symbol in the ABI corresponding to a C API function holds the name of the function, the number of arguments, the types of the arguments, and the type of the value returned by the function, if any.
-Many variables exposed in the C headers are C structs, so the layout of these structs is also part of the ABI.
+Many variables exposed in C headers are C structs, so the layout of these structs is also part of the corresponding ABI.
 The layout of the struct is the order and types of all of the members of the struct.
 
-Notably, the Python ABI does _not_ include things that _are_ in the C API.
+Notably, the a C ABI does _not_ include things that _are_ in the C API.
 This includes all items that are particular to the conventions of the C language or the C preprocessor like [macros](<https://www.cs.yale.edu/homes/aspnes/pinewiki/C(2f)Macros.html>), [typedefs](https://en.wikipedia.org/wiki/Typedef), and [inline functions](<https://en.wikipedia.org/wiki/Inline_(C_and_C%2B%2B)>).
 The Python ABI also doesn't depend on the names of the function arguments: all it cares about is how to store and lay out the instances of different types exposed in a C API in memory.
 
@@ -94,8 +94,10 @@ This means that programming languages that cannot compile C syntax, like Rust, c
 Instead, Rust extensions rely on Rust re-implementations of macros and static inline functions exposed by the C API based on items that _are_ in the Python ABI.
 C++ _is_ compatible with the C preprocessor, so you can use typedefs, macros, and inline functions exposed in the CPython C API in C++ extensions.
 
+A C ABI is also fundamentally platform-specific. Below, I refer to parts of the ABI that are specific only to CPython's ABI as "the Python ABI", but always keep in mind that there are distinct ABIs on different platforms.
+
 These details about the C ABI in particular are very important in practice for C++ and Rust.
-Rust does not have any ABI stability guarantees: the layout and ordering of struct members are not guaranteed but the compiler except if a struct is explicitly set to follow C ABI conventions using [`#[repr(C)]`](https://doc.rust-lang.org/nomicon/other-reprs.html#reprc).
+Rust does not have any ABI stability guarantees: the layout and ordering of struct members are not guaranteed by the compiler except if a struct is explicitly set to follow C ABI conventions using [`#[repr(C)]`](https://doc.rust-lang.org/nomicon/other-reprs.html#reprc).
 C++ does allow defining C++ APIs with stable ABIs but doing so is [much more complex](https://community.kde.org/Policies/Binary_Compatibility_Issues_With_C++) due to details around ABI stability in various C++ standard library implementations as well as complexities like [name mangling](https://en.wikipedia.org/wiki/Name_mangling).
 In practice, the C ABI is the low-level lingua franca of the modern computing environment, used by most popular programming languages to enable interoperability at the binary level.
 
