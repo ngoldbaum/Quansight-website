@@ -25,6 +25,15 @@ In this post I hope to answer all these questions and build up your intuition ab
 I also hope you'll learn some useful information about how Python projects that include native extensions are distributed, what the ABI compatibility tags that show up in wheel filenames mean, and how projects can choose to target different Python ABIs depending on the tradeoffs they want to make.
 By the end, you should be able to look at any wheel filename and know which Python interpreters it will install on — and why.
 
+This post goes into quite a bit of low-level details that requires at least a
+surface familiarity with a systems programming language like C, C++, or Rust.
+If you feel like you're getting in over you're head, I've tried to carve out the key takeaways from each section to explain the important consequences of what I'm talking about.
+The user-facing consequences of the low-level details about ABIs and C APIs I discuss below allow projects like NumPy, cryptography, or pydantic to distribute binaries that massively accelerate their performance and capabilities.
+
+Understanding the structure of the CPython ABI will allow you to make informed decisions if you ever decide to distribute a package in the future.
+You may not realize it, but even if you're only interaction with the Python language is to write a single-file script, you are closer than you might realize to distributing code to a wider audience.
+Demystifying the C, C++, Rust, or Fortran internals of libraries is something of a superpower for a maturing Python developer in that it becomes possible to debug and understand issues are caused by problems in low-level code.
+
 ## The CPython C API and the Python ABI
 
 The Python interpreter does a bit of a magic trick when you execute a script
